@@ -5,6 +5,7 @@ from request input. Results are plain JSON (node/edge lists) so the UI renders t
 """
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any
 
@@ -13,6 +14,7 @@ from forgetrace.graph.loader import connect, graph_config, uid
 KEY_LABEL = {"user": "User", "host": "Host", "ip": "IP", "domain": "Domain", "group": "Group",
              "alert": "Alert", "incident": "Incident"}
 REACH_RELS = "LOGGED_ON|ADMIN_TO|MEMBER_OF"
+VIA_REASON = {"user": "same_user", "host": "same_host", "ip": "pivot_ip", "domain": "same_hash_or_domain"}
 
 _drv = None
 _why: str | None = None
@@ -125,3 +127,46 @@ def campaign_list(ws: str) -> dict[str, Any]:
     return {"campaigns": rows, "count": len(rows),
             "note": "Campaigns join alerts that share an uncommon address, account or domain at any time gap; "
                     "they are inferences with the shared entity and gap on every link."}
+
+
+def chain_members(ws: str, label: str, chain_id: str) -> tuple[list[str], list[dict]]:
+    """Alert ids of an incident/campaign in order, and the links between them (for explanations)."""
+    if label not in ("Incident", "Campaign"):
+        raise ValueError("label must be Incident or Campaign")
+    rel = "CONTAINS" if label == "Incident" else "INCLUDES"
+    u = chain_id if chain_id.startswith(f"{ws}|") else (uid(ws, f"campaign:{chain_id}") if label == "Campaign"
+                                                       else uid(ws, f"incident:{chain_id}"))
+    rows = _run(f"""MATCH (c:{label} {{uid: $u}})-[x:{rel}]->(a:Alert) RETURN a.uid AS uid, a.group_id AS gid
+                    ORDER BY x.order""", u=u)
+    if not rows:
+        raise ValueError(f"{label.lower()} {chain_id!r} not found")
+    ids = [r["uid"] for r in rows]
+    links = []
+    for r in _run("""MATCH (a:Alert)-[e:LEADS_TO|RELATED]->(b:Alert) WHERE a.uid IN $ids AND b.uid IN $ids
+                     RETURN a.uid AS a, b.uid AS b, type(e) AS t, e.reasons_json AS reasons, e.delta_t_s AS dt,
+                            e.gap_s AS gap, e.score AS score, e.via AS via""", ids=ids):
+        if r["reasons"]:  # windowed LEADS_TO: the dossier §12 reasons
+            reasons = json.loads(r["reasons"])
+        elif r["via"]:  # long-range RELATED: one shared uncommon entity
+            kind, _, value = r["via"].split("|", 1)[-1].partition(":")
+            reasons = [{"type": VIA_REASON.get(kind, "same_" + kind), "entity_key": f"{kind}:{value}"}]
+        else:
+            reasons = []
+        links.append({"src": r["a"], "dst": r["b"], "kind": r["t"], "reasons": reasons,
+                      "gap_s": r["dt"] if r["dt"] is not None else r["gap"], "score": r["score"]})
+    gid = {r["uid"]: r["gid"] for r in rows}
+    best: dict[str, dict] = {}
+    for ln in links:  # one incoming link per step: windowed LEADS_TO first, then the shortest RELATED gap
+        k = ln["dst"]
+        rank = (ln["kind"] != "LEADS_TO", ln["gap_s"] or 0)
+        if k not in best or rank < (best[k]["kind"] != "LEADS_TO", best[k]["gap_s"] or 0):
+            best[k] = ln
+    return [gid[i] for i in ids], [{**v, "dst": gid[v["dst"]]} for v in best.values()]
+
+
+def incident_list(ws: str) -> dict[str, Any]:
+    rows = _run("""MATCH (i:Incident {ws: $ws}) OPTIONAL MATCH (i)-[:CONTAINS]->(a:Alert)
+                   RETURN i.uid AS id, i.tactics AS tactics, i.ts_first AS ts_first, i.ts_last AS ts_last,
+                          i.max_severity AS max_severity, count(a) AS alerts, collect(a.rule_id)[0..12] AS rules
+                   ORDER BY i.ts_first""", ws=ws)
+    return {"incidents": [dict(r) for r in rows], "count": len(rows)}

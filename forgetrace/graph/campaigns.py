@@ -145,7 +145,7 @@ def live_incidents(driver, ws: str, min_tactics: int = 2, database: str | None =
             if len(tactics) < min_tactics:
                 continue
             members.sort(key=lambda m: (alerts[m]["t0"], m))
-            rows.append({"uid": uid(ws, f"incident:{members[0].split('|')[-1]}"), "members": members, "tactics": tactics,
+            rows.append({"uid": uid(ws, f"incident:{members[0].split(':')[-1]}"), "members": members, "tactics": tactics,
                          "ts_first": alerts[members[0]]["t0"], "ts_last": max(alerts[m]["t1"] for m in members),
                          "max_severity": max(alerts[m]["sev"] or 0 for m in members)})
         s.run("MATCH (i:Incident {ws: $ws}) DETACH DELETE i", ws=ws).consume()

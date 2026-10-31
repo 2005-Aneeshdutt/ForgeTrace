@@ -175,7 +175,22 @@ class LiveEngine:
         self._tier()
         self._save()
         self._status(res)
+        self._publish()
         return res
+
+    def _publish(self) -> None:
+        """Atomically publish a read-only snapshot of the knowledge base for the API: DuckDB lets one
+        process hold the database file, and this engine writes continuously. Raw events are Parquet
+        outside the file, so the snapshot stays small."""
+        import os
+
+        self.con.execute("CHECKPOINT")
+        self.con.close()
+        db = self.out / "forgetrace.duckdb"
+        tmp = self.out / ".snapshot.tmp"
+        shutil.copy2(db, tmp)
+        os.replace(tmp, self.out / "live_snapshot.duckdb")
+        self.con = store.connect(self.out)
 
     def _views(self, horizon_start: datetime, bmax: datetime, parts: list[str]) -> None:
         hot = [p for b in self.state["batches"] if b["tier"] == "hot" and datetime.fromisoformat(b["max_ts"]) >= horizon_start

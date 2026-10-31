@@ -41,7 +41,7 @@ MAX_UPLOAD = int(os.environ.get("FORGETRACE_MAX_UPLOAD", 8 * 2**30))
 app = FastAPI(title="ForgeTrace", version=config.CODE_VERSION)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
-_cons: dict[str, duckdb.DuckDBPyConnection] = {}
+_cons: dict[str, tuple] = {}
 _lock = threading.Lock()
 _job: dict[str, Any] = {"state": "idle"}
 
@@ -51,10 +51,17 @@ def _rel(p: Path) -> str:
     return str(p.relative_to(config.ROOT)) if p.is_relative_to(config.ROOT) else str(p)
 
 
+def _db_file(d: Path) -> Path:
+    """Live workspaces are read from the snapshot the live engine publishes after every batch."""
+    snap = d / "live_snapshot.duckdb"
+    return snap if snap.exists() else d / "forgetrace.duckdb"
+
+
 def ws_dirs() -> dict[str, Path]:
-    if (OUT / "forgetrace.duckdb").exists():
+    if (OUT / "forgetrace.duckdb").exists() or (OUT / "live_snapshot.duckdb").exists():
         return {OUT.name: OUT}
-    found = {d.name: d for d in sorted(OUT.iterdir()) if d.is_dir() and (d / "forgetrace.duckdb").exists()} \
+    found = {d.name: d for d in sorted(OUT.iterdir()) if d.is_dir() and
+             ((d / "forgetrace.duckdb").exists() or (d / "live_snapshot.duckdb").exists())} \
         if OUT.exists() else {}
     for name in SOURCES:  # always offer the runnable workspaces, even before their first run
         found.setdefault(name, OUT / name)
@@ -77,18 +84,22 @@ def ws_dir(ws: str | None) -> tuple[str, Path]:
         raise HTTPException(404, f"unknown workspace {name!r}")
     if _job.get("state") == "running" and _job.get("workspace") == name:
         raise HTTPException(409, f"workspace {name!r} is being re-analysed; try again when the run finishes")
-    if not (d / "forgetrace.duckdb").exists():
+    if not _db_file(d).exists():
         raise HTTPException(404, f"workspace {name!r} has not been analysed yet")
     return name, d
 
 
 def con(ws: str | None) -> duckdb.DuckDBPyConnection:
     name, d = ws_dir(ws)
+    f = _db_file(d)
+    stamp = f.stat().st_mtime_ns
     with _lock:
-        c = _cons.get(name)
-        if c is None:
-            c = duckdb.connect(str(d / "forgetrace.duckdb"), read_only=True)
-            _cons[name] = c
+        c, seen = _cons.get(name, (None, None))
+        if c is None or seen != stamp:  # a newer live snapshot was published
+            if c is not None:
+                c.close()
+            c = duckdb.connect(str(f), read_only=True)
+            _cons[name] = (c, stamp)
     return c.cursor()
 
 
@@ -96,7 +107,7 @@ def _drop_con(name: str) -> None:
     with _lock:
         c = _cons.pop(name, None)
         if c is not None:
-            c.close()
+            c[0].close()
 
 
 @app.middleware("http")
@@ -568,3 +579,80 @@ def incident_events(incident_id: int, ws: str | None = None, offset: int = 0, li
                      [p["group_ids"], limit, offset]).fetchall()
     return {"incident_id": incident_id, "total": total, "offset": offset, "limit": limit,
             "events": [{**dict(zip(cols, r)), "ts": str(r[1])} for r in rows]}
+
+
+# ----------------------------------------------------------------------------- explanations + live (mentor)
+def _ws_path(ws: str | None) -> tuple[str, Path]:
+    return ws_dir(ws)
+
+
+def _maybe_llm(facts: dict, llm: bool) -> dict:
+    if llm:
+        from forgetrace.report.llm import narrate
+
+        facts = {**facts, "narrative": narrate(facts, run_id=facts.get("id"))}
+    return facts
+
+
+@app.get("/explain/alert/{alert_id}")
+def explain_alert_ep(alert_id: str, ws: str | None = None, llm: bool = False) -> dict[str, Any]:
+    from forgetrace.report.explain import explain_alert
+
+    name, d = _ws_path(ws)
+    return _maybe_llm(explain_alert(con(name), d, alert_id), llm)
+
+
+@app.get("/explain/incident/{incident_id}")
+def explain_incident_ep(incident_id: str, ws: str | None = None, llm: bool = False) -> dict[str, Any]:
+    """Batch incidents by number; live incidents by graph id (the members and links come from Neo4j)."""
+    from forgetrace.report.explain import explain_batch_incident, explain_chain
+
+    name, d = _ws_path(ws)
+    c = con(name)
+    if incident_id.isdigit() and _has_table(c, "incident_cache"):
+        return _maybe_llm(explain_batch_incident(c, d, int(incident_id)), llm)
+    members, links = _graph("chain_members", name, "Incident", incident_id)
+    return _maybe_llm(explain_chain(c, d, "incident", incident_id, members, links), llm)
+
+
+@app.get("/explain/campaign/{campaign_id}")
+def explain_campaign_ep(campaign_id: str, ws: str | None = None, llm: bool = False) -> dict[str, Any]:
+    from forgetrace.report.explain import explain_chain
+
+    name, d = _ws_path(ws)
+    members, links = _graph("chain_members", name, "Campaign", campaign_id)
+    return _maybe_llm(explain_chain(con(name), d, "campaign", campaign_id, members, links), llm)
+
+
+def _has_table(c, t: str) -> bool:
+    try:
+        c.execute(f"SELECT 1 FROM {t} LIMIT 0")
+        return True
+    except duckdb.Error:
+        return False
+
+
+@app.get("/live/status")
+def live_status(ws: str | None = None) -> dict[str, Any]:
+    name, d = _ws_path(ws)
+    p = d / "live_status.json"
+    if not p.exists():
+        raise HTTPException(404, f"workspace {name!r} is not a live workspace")
+    return json.loads(p.read_text())
+
+
+@app.get("/live/alerts")
+def live_alerts(ws: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    name, _ = _ws_path(ws)
+    c = con(name)
+    if not _has_table(c, "kb_alerts"):
+        raise HTTPException(404, "not a live workspace")
+    cur = c.execute("""SELECT uid, rule_id, rule_title, technique_id, tactic, severity, ts_first, ts_last, member_count,
+                              first_batch, last_batch FROM kb_alerts ORDER BY ts_last DESC LIMIT ?""", [max(1, min(limit, 2000))])
+    cols = [x[0] for x in cur.description]
+    return [{k: (str(v) if k.startswith("ts_") else v) for k, v in zip(cols, r)} for r in cur.fetchall()]
+
+
+@app.get("/graph/incidents")
+def graph_incident_list(ws: str | None = None) -> dict[str, Any]:
+    return _graph("incident_list", ws or default_ws())

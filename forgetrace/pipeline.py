@@ -320,7 +320,8 @@ def persist(con: duckdb.DuckDBPyConnection, res: dict, payloads: list[dict], rul
 
     table("alert_groups", res["groups"], ["group_id", "rule_id", "technique_id", "tactic", "ts_first", "ts_last",
                                           "raw_alert_count", "detection_ids", "member_event_ids", "entities",
-                                          "severity", "also_matched", "aggregate_key", "p_malicious", "contributions"])
+                                          "severity", "also_matched", "aggregate_key", "p_malicious", "contributions",
+                                          "evidence"])
     table("edges", res["edges"], ["edge_id", "src_group_id", "dst_group_id", "reasons", "score", "score_terms",
                                   "weighted_terms", "delta_t_s", "evidence_event_ids", "connector_event_id", "kind"])
     cand = res["candidate_edges"]

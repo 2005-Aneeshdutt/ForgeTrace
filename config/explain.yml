@@ -1,0 +1,80 @@
+# Human verification guidance per ATT&CK technique (parent id) used by forgetrace/report/explain.py.
+# `benign`: ordinary activity that can look the same - what an analyst should rule out.
+# `check`: what to look at in the raw log to confirm or refute. Generic: no entities or datasets named.
+default:
+  benign: ["Scheduled or administrative activity that matches the rule's pattern",
+           "A test or misconfigured system generating repetitive events"]
+  check: ["Open the cited raw lines and confirm the fields the rule used (shown under 'why flagged')",
+          "Look at the same entities shortly before and after: is there a matching change ticket or known job?"]
+T1110:
+  benign: ["A user mistyping a password a few times, or a service with an expired password retrying",
+           "A vulnerability scanner or monitoring probe using test credentials"]
+  check: ["Count failures per account and per source in the cited window",
+          "Check whether any success follows from the same source - that is the compromise signal",
+          "Check whether the source is internal infrastructure (scanner, jump host) or external"]
+T1078:
+  benign: ["A legitimate user logging in from a new location, VPN or travel",
+           "An administrator using a break-glass account during an incident"]
+  check: ["Compare the source country/address with the account's usual sources in earlier logs",
+          "Check the hour against the user's normal working hours and any preceding failures"]
+T1021:
+  benign: ["IT staff administering servers over SMB/RDP", "Backup or deployment tools touching many hosts"]
+  check: ["List the destinations and ports from the cited lines; are they hosts this source normally touches?",
+          "Check whether the account used is an admin/service account with a documented reason"]
+T1046:
+  benign: ["An authorised vulnerability scan or asset-discovery job"]
+  check: ["Confirm the number of distinct ports/hosts in the window", "Check whether the source is a known scanner"]
+T1059:
+  benign: ["Administrative scripts and software deployment tools (often encoded or hidden)"]
+  check: ["Read the full command line in the raw line", "Check the parent process: an Office app or browser spawning a shell is the concern"]
+T1071:
+  benign: ["Software update checks, telemetry or monitoring agents calling home on a schedule"]
+  check: ["Check the regularity (interval) and payload sizes", "Look up whether the destination is a known vendor service"]
+T1041:
+  benign: ["Backups or cloud sync uploading large volumes"]
+  check: ["Check the destination and the process/service that sent the data", "Compare with the host's normal outbound volume"]
+T1048:
+  benign: ["Backups, cloud sync or CDN uploads"]
+  check: ["Sum the bytes per destination over the window", "Check whether the destination is a sanctioned service"]
+T1136:
+  benign: ["A new employee or service account created by IT through the normal process"]
+  check: ["Who created the account and from where", "Was the account used and removed shortly after (rogue admin pattern)?"]
+T1098:
+  benign: ["Planned group membership changes by IT"]
+  check: ["Which group was changed and by whom; is there a matching change request?"]
+T1547:
+  benign: ["Installers and updaters registering legitimate start-up entries"]
+  check: ["Read the registry path and value written", "Check which process wrote it and whether the binary is known"]
+T1204:
+  benign: ["A user opening a legitimate document that runs approved macros"]
+  check: ["Check the document name/path and the child process the Office app started"]
+T1190:
+  benign: ["Security testing of the web application", "Search terms that happen to contain SQL/script words"]
+  check: ["Read the full request URL in the raw lines", "Check the response/action: blocked vs allowed, and any requests after it from the same source"]
+T1189:
+  benign: ["Security testing", "Users pasting markup into a form"]
+  check: ["Read the payload in the URL", "Check whether the same source continued with other attack payloads"]
+T1083:
+  benign: ["Broken links or crawlers requesting odd paths"]
+  check: ["Read the requested paths", "Check whether any request returned data (allowed) rather than blocked"]
+T1562:
+  benign: ["Planned maintenance on the logging configuration"]
+  check: ["Read the configuration message and the administrator account", "Check whether logging was re-enabled and what changed in between"]
+T1498:
+  benign: ["A traffic spike from a legitimate event, a load test"]
+  check: ["Count sources and connections per minute", "Check whether connections completed (half-open floods do not)"]
+T1499:
+  benign: ["Load testing", "A popular event"]
+  check: ["Request rate per source and in total"]
+T1069:
+  benign: ["Administrators checking group membership"]
+  check: ["Which commands ran, by which account, and what followed"]
+T1560:
+  benign: ["Users or backup jobs compressing files"]
+  check: ["Archive name, location and size; was it uploaded afterwards?"]
+T1567:
+  benign: ["Sanctioned cloud storage use"]
+  check: ["Destination service and volume compared with the user's history"]
+T1105:
+  benign: ["Software downloads by users or updaters"]
+  check: ["File name/type versus what it claims to be; the downloading process"]

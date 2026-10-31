@@ -1,0 +1,15 @@
+# Optional LLM narrative over verified facts (docs/PHASE2.md OPENROUTER; DECISIONS D-87).
+# The product works fully with this off. The key is read only from the environment variable named below.
+enabled: true
+api_key_env: OPENROUTER_API_KEY
+endpoint: https://openrouter.ai/api/v1/chat/completions
+model: google/gemini-2.5-flash-lite      # cheap JSON-capable model; change here, recorded in every cache entry
+price_per_million_usd: {input: 0.10, output: 0.40}   # used only when the API does not report the cost
+temperature: 0
+max_tokens: 1200
+timeout_s: 60
+max_attempts: 2
+caps_usd: {lifetime: 1.50, per_run: 0.25}
+cache_dir: data/llm_cache        # responses keyed by (facts hash, prompt version, model); gitignored
+ledger: data/llm_ledger.jsonl    # one line per call with tokens and cost; gitignored
+prompt_version: "1"
