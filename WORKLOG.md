@@ -17,6 +17,11 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
 | 14:45–14:47 | Hardening | Independent run on edr_events.json and a 50 MB firex slice: added process-tree `link` to R010, fixed FortiGate timestamps, evidence computed only for kept edges. |
 | 14:47–14:50 | 9 Docs + final validation | make sample/run/score/test/serve all pass. |
 
+## Follow-up (2026-10-31 ~15:00–15:25 IST): UI and input workflow
+- Rebuilt the dashboard as a multi-page console: overview, incidents, detections, data sources, rules and evaluation pages, plus an evidence drawer, deep links and themes. Checked in headless Chrome in dark and light mode.
+- Added the `data/input/` drop folder, `make analyze`, raw-body uploads, background runs with progress, per-workspace results and new endpoints (`/workspaces`, `/overview`, `/detections`, `/metrics`, `/inputs`, `/runs`).
+- Tests: 56 pass, including a live upload → analyse → evidence → delete cycle and path-traversal rejection.
+
 ## Metrics (make score, seed 7)
 Step recall 100% (11/11) · parent label 100% · sub-technique 81.8% (R008 emits T1021, ground truth T1021.001/.002) · attacks in order 2/2 · false-alarm share 0/2 · run 1.14 s · peak RSS 231.5 MiB.
 The generator, ground truth and rules share an author, so these numbers are optimistic (see README "How to read these numbers").
