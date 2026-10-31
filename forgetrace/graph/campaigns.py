@@ -113,3 +113,47 @@ def campaigns(driver, ws: str, database: str | None = None) -> list[dict[str, An
                                collect({group_id: a.group_id, rule_id: a.rule_id, technique_id: a.technique_id,
                                         tactic: a.tactic, ts_first: a.ts_first}) AS alerts
                         ORDER BY c.campaign_id""", ws=ws).data()
+
+
+def live_incidents(driver, ws: str, min_tactics: int = 2, database: str | None = None) -> dict[str, Any]:
+    """Incidents in live mode: connected components of windowed LEADS_TO edges (dossier §12) spanning
+    >= min_tactics tactics, recomputed from the graph after each batch. The id is the component's
+    earliest alert, so an incident keeps its id while it grows."""
+    db = database or graph_config()["database"]
+    with driver.session(database=db) as s:
+        alerts = {a["uid"]: a for a in s.run("""MATCH (a:Alert {ws: $ws}) RETURN a.uid AS uid, a.tactic AS tactic,
+                                                a.ts_first AS t0, a.ts_last AS t1, a.severity AS sev""", ws=ws).data()}
+        links = s.run("MATCH (a:Alert {ws: $ws})-[:LEADS_TO]->(b:Alert) RETURN a.uid AS a, b.uid AS b", ws=ws).data()
+        parent = {u: u for u in alerts}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for ln in links:
+            ra, rb = find(ln["a"]), find(ln["b"])
+            if ra != rb:
+                parent[max(ra, rb)] = min(ra, rb)
+        comps: dict[str, list[str]] = defaultdict(list)
+        for u in alerts:
+            comps[find(u)].append(u)
+        rows = []
+        for members in comps.values():
+            tactics = sorted({alerts[m]["tactic"] for m in members})
+            if len(tactics) < min_tactics:
+                continue
+            members.sort(key=lambda m: (alerts[m]["t0"], m))
+            rows.append({"uid": uid(ws, f"incident:{members[0].split('|')[-1]}"), "members": members, "tactics": tactics,
+                         "ts_first": alerts[members[0]]["t0"], "ts_last": max(alerts[m]["t1"] for m in members),
+                         "max_severity": max(alerts[m]["sev"] or 0 for m in members)})
+        s.run("MATCH (i:Incident {ws: $ws}) DETACH DELETE i", ws=ws).consume()
+        s.execute_write(lambda tx: tx.run("""
+            UNWIND $rows AS r MERGE (i:Incident {uid: r.uid})
+            SET i.ws = $ws, i.tactics = r.tactics, i.ts_first = r.ts_first, i.ts_last = r.ts_last,
+                i.alerts = size(r.members), i.max_severity = r.max_severity, i.live = true
+            WITH i, r UNWIND range(0, size(r.members) - 1) AS k
+            MATCH (a:Alert {uid: r.members[k]}) MERGE (i)-[c:CONTAINS]->(a) SET c.order = k + 1""",
+                                          rows=rows, ws=ws).consume())
+    return {"incidents": len(rows)}

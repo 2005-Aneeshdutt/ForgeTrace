@@ -406,32 +406,38 @@ def first_follower(win: list[tuple], followers: list[tuple], n: int, lim: float,
     return None, []
 
 
-def detect(con: duckdb.DuckDBPyConnection, rules: list[Rule]) -> dict:
+def detection_row(rule: Rule, d: dict) -> dict:
+    """One detection in the stored shape; d = {members, ts_first, ts_last, evidence}."""
     att = config.attack()
-    rows, timing = [], {}
+    tech = att["techniques"][rule.technique]
+    tac = att["tactics"][rule.tactic]
+    return {
+        "detection_id": f"{rule.id}:{d['members'][0]}", "rule_id": rule.id, "rule_version": rule.version,
+        "rule_author": rule.author, "rule_title": rule.title, "technique_id": rule.technique,
+        "technique_name": tech["name"], "tactic": rule.tactic, "tactic_ordinal": tac["ordinal"],
+        "kill_chain_phase": tac["kill_chain_phase"], "severity": rule.severity,
+        "confidence": rule.confidence, "label_priority": rule.label_priority,
+        "ts_first": d["ts_first"], "ts_last": d["ts_last"], "member_event_ids": d["members"],
+        "member_count": len(d["members"]), "evidence": d["evidence"],
+        "aggregate_by": rule.aggregate_by,
+        # PHASE2 frozen Detection: rules score with their prior confidence; the reason is the matched condition.
+        "detector": f"rule:{rule.id}", "score": rule.confidence,
+        "reasons": [{"feature": f"rule:{rule.id}", "value": len(d["members"]), "baseline": None,
+                     "contribution": None, "text": d["evidence"]}],
+    }
+
+
+def detect(con: duckdb.DuckDBPyConnection, rules: list[Rule], extra_rows: list[dict] | None = None) -> dict:
+    """Run rules over the `events` view and store detections. extra_rows are detections produced
+    elsewhere (the live engine's bucketed long-window rules and first-seen state)."""
+    rows, timing = list(extra_rows or []), {}
     import time
 
     for rule in rules:
         t0 = time.perf_counter()
         dets = _run_rule(con, rule)
         timing[rule.id] = round(time.perf_counter() - t0, 4)
-        tech = att["techniques"][rule.technique]
-        tac = att["tactics"][rule.tactic]
-        for d in dets:
-            rows.append({
-                "detection_id": f"{rule.id}:{d['members'][0]}", "rule_id": rule.id, "rule_version": rule.version,
-                "rule_author": rule.author, "rule_title": rule.title, "technique_id": rule.technique,
-                "technique_name": tech["name"], "tactic": rule.tactic, "tactic_ordinal": tac["ordinal"],
-                "kill_chain_phase": tac["kill_chain_phase"], "severity": rule.severity,
-                "confidence": rule.confidence, "label_priority": rule.label_priority,
-                "ts_first": d["ts_first"], "ts_last": d["ts_last"], "member_event_ids": d["members"],
-                "member_count": len(d["members"]), "evidence": d["evidence"],
-                "aggregate_by": rule.aggregate_by,
-                # PHASE2 frozen Detection: rules score with their prior confidence; the reason is the matched condition.
-                "detector": f"rule:{rule.id}", "score": rule.confidence,
-                "reasons": [{"feature": f"rule:{rule.id}", "value": len(d["members"]), "baseline": None,
-                             "contribution": None, "text": d["evidence"]}],
-            })
+        rows.extend(detection_row(rule, d) for d in dets)
     _duplicates(rows)
     _write(con, rows)
     _labels(con)

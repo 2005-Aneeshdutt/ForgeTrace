@@ -22,6 +22,14 @@ def main() -> None:
     r.add_argument("--dataset", default=None, help="dataset name stamped on every event (e.g. d0, lanl, ait)")
     r.add_argument("--graph", action="store_true", help="also load the run into Neo4j (docs/wp/GR-1.md)")
     r.add_argument("--quiet", action="store_true", help="no progress lines on stderr")
+    lv = sub.add_parser("live", help="watch files/folders and enrich the knowledge base and graph continuously")
+    lv.add_argument("--watch", nargs="+", required=True, help="log files and/or folders (new files are picked up)")
+    lv.add_argument("--out", required=True)
+    lv.add_argument("--graph", action="store_true")
+    lv.add_argument("--batch-mb", type=int, default=None, help="override config/live.yml batch_mb")
+    lv.add_argument("--once", action="store_true", help="process what exists now, then exit (no following)")
+    lv.add_argument("--idle-exit", type=float, default=None, help="stop after this many seconds without new data")
+    lv.add_argument("--reset", action="store_true", help="start a fresh knowledge base in --out")
     an = sub.add_parser("analyse", help="re-run detection..graph on an already-ingested workspace")
     an.add_argument("--out", required=True)
     an.add_argument("--graph", action="store_true")
@@ -47,6 +55,17 @@ def main() -> None:
         print(json.dumps({k: stats[k] for k in ("stages", "wall_time_s", "peak_rss_bytes", "ingest", "detections",
                                                 "alert_groups", "kept_edges", "incidents", "abstained_components")},
                          indent=1))
+    elif a.cmd == "live":
+        import sys
+
+        from forgetrace.live.engine import LiveEngine
+
+        eng = LiveEngine([Path(p) for p in a.watch], Path(a.out), graph=a.graph, reset=a.reset,
+                         progress=lambda m: print(f"[live] {m}", file=sys.stderr, flush=True))
+        if a.batch_mb:
+            eng.cfg["batch_mb"] = a.batch_mb
+        st = eng.run(follow=not a.once, idle_exit=a.idle_exit)
+        print(json.dumps({k: st.get(k) for k in ("batches", "watermark", "totals", "knowledge_base")}, indent=1, default=str))
     elif a.cmd == "analyse":
         from forgetrace.pipeline import reanalyse
 

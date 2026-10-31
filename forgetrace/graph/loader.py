@@ -261,6 +261,18 @@ WRITES: list[tuple[str, str]] = [
 ]
 
 
+def clear_workspace(session, ws: str) -> None:
+    """Remove a workspace's subgraph. Relationships first, in batches: a hub node (a public server) can
+    hold ~10^6 relationships, and DETACH DELETE of such a node in one transaction exhausts Neo4j's
+    transaction memory (D-75)."""
+    labels = LABELS + ["Campaign", "Batch"]
+    for lab in labels:
+        session.run(f"MATCH (n:{lab} {{ws: $ws}})-[r]-() CALL (r) {{ DELETE r }} IN TRANSACTIONS OF 10000 ROWS",
+                    ws=ws).consume()
+    for lab in labels:
+        session.run(f"MATCH (n:{lab} {{ws: $ws}}) CALL (n) {{ DELETE n }} IN TRANSACTIONS OF 10000 ROWS", ws=ws).consume()
+
+
 def _batches(rows: list[dict], n: int) -> Iterator[list[dict]]:
     for i in range(0, len(rows), n):
         yield rows[i:i + n]
@@ -279,13 +291,7 @@ def load(driver, rows: dict[str, list[dict]], ws: str, run_meta: dict, replace: 
             s.run(stmt).consume()
         if replace:
             t = time.perf_counter()
-            # Relationships first, in batches: a hub node (a public server) can hold ~10^6 relationships,
-            # and DETACH DELETE of such a node in one transaction exhausts Neo4j's transaction memory.
-            for lab in LABELS + ["Campaign"]:
-                s.run(f"MATCH (n:{lab} {{ws: $ws}})-[r]-() CALL (r) {{ DELETE r }} IN TRANSACTIONS OF 10000 ROWS",
-                      ws=ws).consume()
-            for lab in LABELS + ["Campaign"]:
-                s.run(f"MATCH (n:{lab} {{ws: $ws}}) CALL (n) {{ DELETE n }} IN TRANSACTIONS OF 10000 ROWS", ws=ws).consume()
+            clear_workspace(s, ws)
             out["steps"]["clear"] = {"seconds": round(time.perf_counter() - t, 3)}
         for step, cypher in WRITES:
             data = rows.get(step, [])

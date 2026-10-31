@@ -1,0 +1,12 @@
+# Live / incremental analysis (forgetrace live; docs/wp/LIVE.md; DECISIONS D-82..D-85).
+batch_mb: 256                 # bytes taken from the input per micro-batch (line-aligned)
+poll_seconds: 2               # how often watched files/folders are checked for new data
+lookback_minutes: 60          # raw history re-scanned with each batch: rules with windows up to this run on
+                              # batch + lookback; longer windows use bucketed state (never a scan of old data)
+bucket_minutes: 5             # granularity of the bucketed state for long-window threshold rules
+max_bucket_values: 5000       # cap on distinct values kept per key and bucket (distinct-count rules)
+correlate_window_hours: 6     # stored alerts this recent are correlated with each new alert (dossier §12)
+hot_days: 7                   # raw Parquet newer than this (by event time) stays in the query path
+cold_dir: cold                # older Parquet moves here: off the hot path, still used for evidence by event_id
+cold_days: null               # delete cold Parquet older than this; null keeps it (raw logs remain the source)
+sample_event_ids: 50          # raw event ids kept per knowledge-base alert (all ids stay derivable from Parquet)
