@@ -46,8 +46,12 @@ make serve     # http://127.0.0.1:8000 — dashboard + API (works offline; Cytos
 
 ## Is a machine-learning model flagging these?
 
-No. Nothing in ForgeTrace is a trained model, and no LLM takes part in detection, linking or scoring (the optional AI summary only restates already-verified explanations). This follows the dossier (§4, §9, §16): there is no labelled training data, and every flag has to be explainable down to raw lines.
-- **Detections** come from the YAML rules in `config/rules/`. Each rule is a filter, a threshold or a first-seen baseline compiled to SQL. The only "statistics" are transparent counts, such as how many hosts contacted an IP or whether a user→host pair was seen before.
+Partly. Rules and two unsupervised models run side by side (`config/ml.yml`, DECISIONS D-89..D-93). No labels are used, and no LLM takes part in detection, linking or scoring. The optional AI summary only restates already-verified explanations.
+- **Rules** (`config/rules/`) are filters, thresholds and first-seen baselines compiled to SQL.
+- **Behaviour model (UEBA)**: an Isolation Forest per entity type (user, host, internal address, active external address) over hourly windows. It compares each entity with its own history. A flag lists the features that made it unusual, each with the entity's usual range ("auth fail = 51 (this entity's usual: median 0.0, p95 1.0)"), and cites the raw lines that show it. Its ATT&CK label comes from a fixed feature→technique table.
+- **Graph link model**: flags an account or machine that opens several new logons or admin connections, in one hour, to destinations its peers never use (lateral movement). Each new link is one flag.
+- **Models corroborate, they do not decide alone.** An incident needs at least one rule detection. A rule's label wins on a shared event, and model alerts never displace a rule-to-rule link. Agreement between detectors raises an alert's *fused p* (noisy-OR of detector priors), which is shown in the UI and explanations.
+- **Live mode** trains on the knowledge base's history, retrains as it grows and judges only new data. Every alert shows a `rule`/`model` badge.
 - **Linking** uses a fixed, documented formula over shared entities, time gaps and tactic order (§12). Every term is shown on each edge.
 - **Risk and reachability** are fixed formulas over the incident and the asset fixture.
 

@@ -7,7 +7,7 @@ Direction set by the owners and mentor:
 - **Real-time is the target.** Logs arrive continuously (e.g. 2 GB per 5 min) and accumulate to TBs. The system links what arrives now to what came days ago through a growing **Neo4j knowledge graph**.
 - **Nothing dataset-specific is hardcoded.** A new unseen dataset is the final checkpoint.
 
-Built since the first handover (all committed; `make check` = 154 tests):
+Built since the first handover (all committed; `make check` = 162 tests):
 
 | Area | Entry point | Notes |
 |---|---|---|
@@ -19,6 +19,7 @@ Built since the first handover (all committed; `make check` = 154 tests):
 | **Live engine** | `forgetrace live --watch … --out … --graph` | micro-batches, bucketed long-window rules, persistent knowledge base, accumulating graph, hot/cold tiers (D-82..D-85, docs/wp/LIVE.md) |
 | **Explanations** | `GET /explain/{alert,incident,campaign}/{id}` | condition in English, observed numbers, verified raw lines, sed/grep steps, benign look-alikes (D-86) |
 | **AI summary** | `?llm=true`, needs `OPENROUTER_API_KEY` | restates facts only; pseudonymised, validated, cached, capped (D-87) |
+| **ML detectors** | `forgetrace/ml/`, `config/ml.yml` | behaviour model (Isolation Forest + per-entity baselines + SHAP reasons) and graph link model; fusion `p_malicious`; models corroborate rules, never form an incident alone; live retrains on stored history (D-89..D-93) |
 | **UI** | Live page, Knowledge graph page | timeline graph per incident/campaign, entity explorer, explanation panel, deep link `#/graph/explain:<kind>:<id>` |
 
 To set up on a new machine:
@@ -33,8 +34,8 @@ For a new dataset:
 4. Set `config/site.yaml` if home countries or the time zone are known.
 
 Still open, from the PHASE2 plan:
-- ML detection (ML-1..ML-5)
-- fusion (FU-2)
+- ML-4 (GNN encoder) and ML-5 (provenance model); ML-1..ML-3 and FU-2 (label-free form) are done
+- calibrated fusion (FU-1/FU-2 learned form), which needs labels
 - learned correlation (CO-1..CO-3) and predictive reach (CO-4)
 - vectorised parser (SC-2)
 - memory governor and Prometheus metrics (SC-5)

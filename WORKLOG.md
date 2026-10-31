@@ -40,6 +40,24 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
 | UI | Live page, Knowledge graph page (timeline layout, entity explorer), explanation panel | renders in headless Chrome | PASS | screenshots during development |
 | EV-2 | 20-seed D0 suite | "Seeds 1–10 tuning, 11–20 test; byte-identical regeneration" | PASS | tests/test_suite.py; data/d0/suite.json |
 
+## Phase 2 — ML layer (2026-11-01)
+- Completed:
+  - M1 behaviour model (UEBA): Isolation Forest, per-entity baselines, SHAP reasons, cited evidence events
+  - M2 graph link model: Adamic-Adar peer reach, pre-window history, cluster filter, one flag per hop
+  - noisy-OR fusion
+  - live integration: stored windows and edges, growth-triggered retraining, warm-up
+  - ML-aware explanations and a rule/model badge in the UI
+  - decisions D-89..D-93
+- Metrics: 162 tests pass. On the dev sample:
+  - batch: 2 incidents, as before; A1 is reconstructed in order, with the behaviour model's brute-force and exfiltration flags and the link model's jdsouza → SRV-FILE-01 hop as corroboration
+  - live: the models flag SRV-RDS-01, jdsouza and SRV-FILE-01 in the A1 window after warm-up
+  - accuracy metrics are paused by owner decision (no ground truth for firex-10G/50G)
+- Open risks:
+  - the budget operating point (10 flags per entity type per day) is a guess without labels
+  - ML runtime on firex-50G has not been measured; evidence extraction is one scan per entity type
+  - live keeps models in memory, so a restart refits on the stored windows
+- Next: measure ML stage time on firex-10G; tune the budget by manual review of flagged windows.
+
 ## Metrics (make score, seed 7)
 Step recall 100% (11/11) · parent label 100% · sub-technique 81.8% (R008 emits T1021, ground truth T1021.001/.002) · attacks in order 2/2 · false-alarm share 0/2 · run 1.14 s · peak RSS 231.5 MiB.
 The generator, ground truth and rules share an author, so these numbers are optimistic (see README "How to read these numbers").
