@@ -12,7 +12,8 @@ make sample    # deterministic dev data: data/sample/events.log, ground_truth.js
 make run       # analyse the sample -> workspace out/sample
 make analyze   # analyse every log file in data/input/ -> workspace out/input
 make score     # compare the sample workspace with ground truth (only the scorer reads ground truth)
-make test      # pytest (56 tests)
+make demo      # analyse the 5-event demo file -> workspace out/demo (dashboard: Pipeline demo)
+make test      # pytest (57 tests)
 make serve     # http://127.0.0.1:8000 — dashboard + API (works offline; Cytoscape is vendored)
 ```
 
@@ -136,6 +137,7 @@ All read endpoints take `?ws=<workspace>` (default: the most recently analysed).
 
 | Page | What it shows |
 |---|---|
+| **Pipeline demo** | Guided 8-step walkthrough of `data/demo/demo_events.log` (5 hand-written events: 3 JSON, 2 CEF, 1 benign) showing each stage's real stored output: ingest (offsets, event IDs, SHA-256) → normalise and store (vendor field → envelope field trace, Parquet) → detect and flag (rule hits, label priority) → aggregate (groups, folded secondary label) → correlate (entity index, every candidate pair's L/T/P/R/F score, kept vs dropped) → attack graph (components, two-tactic gate) → path reconstruction → risk, reachability, containment and evidence check. Deep link: `#/demo/<step>` |
 | **Overview** | Funnel (raw events → detections → alert groups → incidents → unlinked); source files, data span, run time, peak memory; detections by tactic in kill-chain order; events by type; highest-risk incidents; detections per rule; parse errors |
 | **Incidents** | Risk-sorted list plus unlinked alerts. Per incident: severity, risk and its terms, key facts, a template summary (no AI), and tabs: **Attack path** (numbered kill-chain stepper with evidence links and the edge behind each hop), **Graph** (Cytoscape, primary-path hops highlighted, click a node or edge for its evidence and L/T/P/R/F breakdown), **Timeline** (filterable raw events), **Reachability & containment** (compromised set, reachable assets with typed paths, `disable_account` simulation with the fixed disclaimer), **Correlation evidence**, **Uncertainty** |
 | **Detections** | Every rule hit, filterable by text, tactic, rule and whether it is in an incident; links to incidents and raw evidence |

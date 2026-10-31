@@ -195,14 +195,17 @@ def persist(con: duckdb.DuckDBPyConnection, res: dict, payloads: list[dict], rul
         con.execute(f"CREATE TABLE {name} ({', '.join(f'{c} VARCHAR' for c in cols)})")
         for r in rows:
             con.execute(f"INSERT INTO {name} VALUES ({', '.join('?' * len(cols))})",
-                        [r[c] if isinstance(r[c], str) or r[c] is None else dumps(r[c]) for c in cols])
+                        [r.get(c) if isinstance(r.get(c), str) or r.get(c) is None else dumps(r.get(c)) for c in cols])
 
     table("alert_groups", res["groups"], ["group_id", "rule_id", "technique_id", "tactic", "ts_first", "ts_last",
                                           "raw_alert_count", "detection_ids", "member_event_ids", "entities",
                                           "severity", "also_matched", "aggregate_key"])
     table("edges", res["edges"], ["edge_id", "src_group_id", "dst_group_id", "reasons", "score", "score_terms",
                                   "weighted_terms", "delta_t_s", "evidence_event_ids", "connector_event_id", "kind"])
-    table("candidate_edges", res["candidate_edges"], ["edge_id", "score", "score_terms", "reasons"])
+    table("candidate_edges", res["candidate_edges"], ["edge_id", "src_group_id", "dst_group_id", "score", "score_terms",
+                                                      "weighted_terms", "reasons", "delta_t_s", "tau_s",
+                                                      "strongest_entity", "strongest_entity_degree",
+                                                      "target_criticality", "pruned_reason"])
     table("abstained", [{"group_ids": a["group_ids"], "tactics": a["tactics"], "reason": a["reason"],
                          "edge_ids": a["edge_ids"]} for a in res["abstained"]],
           ["group_ids", "tactics", "reason", "edge_ids"])

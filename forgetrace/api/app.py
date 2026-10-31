@@ -32,7 +32,8 @@ from forgetrace.rules.engine import load_rules, rules_summary
 STATIC = Path(__file__).parent / "static"
 OUT = Path(os.environ.get("FORGETRACE_OUT", config.ROOT / "out")).resolve()
 INPUT_DIR = Path(os.environ.get("FORGETRACE_INPUT", config.ROOT / "data" / "input")).resolve()
-SOURCES = {"sample": config.ROOT / "data" / "sample" / "events.log", "input": INPUT_DIR}
+SOURCES = {"demo": config.ROOT / "data" / "demo" / "demo_events.log",
+           "sample": config.ROOT / "data" / "sample" / "events.log", "input": INPUT_DIR}
 ALLOWED_SUFFIXES = {".log", ".json", ".jsonl", ".ndjson", ".cef", ".txt"}
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_UPLOAD = int(os.environ.get("FORGETRACE_MAX_UPLOAD", 8 * 2**30))
@@ -172,7 +173,7 @@ class SimulateResponse(BaseModel):
 
 
 class RunRequest(BaseModel):
-    workspace: Literal["sample", "input"]
+    workspace: Literal["demo", "sample", "input"]
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -471,12 +472,24 @@ def start_run(body: RunRequest) -> dict[str, Any]:
     src = SOURCES[body.workspace]
     if body.workspace == "input" and not list_inputs()["files"]:
         raise HTTPException(400, f"the input folder {list_inputs()['folder']} has no log files; upload or copy some first")
-    if body.workspace == "sample" and not src.exists():
-        raise HTTPException(400, "data/sample/events.log is missing; run `make sample`")
+    if body.workspace in ("sample", "demo") and not src.exists():
+        raise HTTPException(400, f"{_rel(src)} is missing" + ("; run `make sample`" if body.workspace == "sample" else ""))
     _job.clear()
     _job.update(state="running", workspace=body.workspace, started=time.time(), stage="queued", progress=0.0)
     threading.Thread(target=_run_job, args=(body.workspace,), daemon=True).start()
     return dict(_job)
+
+
+@app.get("/walkthrough")
+def walkthrough(ws: str = "demo") -> dict[str, Any]:
+    """Every stage's stored output for a small workspace (the dashboard's Demo page)."""
+    from forgetrace.api.walkthrough import build
+
+    _, d = ws_dir(ws)
+    try:
+        return build(d, con(ws))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
 
 
 @app.get("/runs/current")

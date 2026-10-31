@@ -22,6 +22,9 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
 - Added the `data/input/` drop folder, `make analyze`, raw-body uploads, background runs with progress, per-workspace results and new endpoints (`/workspaces`, `/overview`, `/detections`, `/metrics`, `/inputs`, `/runs`).
 - Tests: 56 pass, including a live upload → analyse → evidence → delete cycle and path-traversal rejection.
 
+## Follow-up: Pipeline demo page
+- Added `data/demo/demo_events.log` (5 events), `make demo`, `GET /walkthrough`, and an 8-step "Pipeline demo" page showing ingest → normalise/store → detect → aggregate → correlate → graph → path → risk/reach/evidence on real stored output. Every step was checked in headless Chrome. 57 tests pass.
+
 ## Metrics (make score, seed 7)
 Step recall 100% (11/11) · parent label 100% · sub-technique 81.8% (R008 emits T1021, ground truth T1021.001/.002) · attacks in order 2/2 · false-alarm share 0/2 · run 1.14 s · peak RSS 231.5 MiB.
 The generator, ground truth and rules share an author, so these numbers are optimistic (see README "How to read these numbers").

@@ -3,7 +3,7 @@ INPUT ?= data/sample/events.log
 OUT ?= out
 INPUT_DIR ?= data/input
 
-.PHONY: setup sample run analyze score serve test clean
+.PHONY: setup sample run analyze demo score serve test clean
 
 setup:
 	python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -18,6 +18,10 @@ run:
 # Your own logs: every log file in data/input/ -> workspace out/input
 analyze:
 	$(PY) -m forgetrace run --input $(INPUT_DIR) --out $(OUT)/input
+
+# 5-event walkthrough file -> workspace out/demo (shown on the dashboard's Demo page)
+demo:
+	$(PY) -m forgetrace run --input data/demo/demo_events.log --out $(OUT)/demo
 
 score:
 	$(PY) tools/score.py --gt data/sample/ground_truth.json --out $(OUT)/sample

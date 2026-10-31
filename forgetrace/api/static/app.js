@@ -48,6 +48,7 @@ const ICONS = {
   rules: ["M8 6h13", "M8 12h13", "M8 18h13", "M3 6h.01", "M3 12h.01", "M3 18h.01"],
   evaluation: ["M9 11l3 3 8-8", "M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"],
   brand: ["M12 3v18", "M5 8l7-5 7 5", "M5 16l7 5 7-5"],
+  demo: ["M6 4l14 8-14 8z"],
 };
 
 async function api(path, opts = {}) {
@@ -71,8 +72,8 @@ function sevPill(sev) {
   return h("span", { class: `pill sev-${sev}`, title: `Severity: ${label}` }, h("span", { class: "dot" }), label);
 }
 function riskBar(score) { const b = h("span", { class: "riskbar" }, h("i")); b.firstChild.style.width = `${Math.min(100, score)}%`; return b; }
-function evLink(eid, label) {
-  return h("a", { class: "ev", title: `Open raw evidence for event ${eid}`, onclick: (e) => { e.stopPropagation(); openEvidence(eid); } }, label || String(eid));
+function evLink(eid, label, ws) {
+  return h("a", { class: "ev", title: `Open raw evidence for event ${eid}`, onclick: (e) => { e.stopPropagation(); openEvidence(eid, ws); } }, label || String(eid));
 }
 function card(title, sub, actions, ...body) {
   return h("section", { class: "card" },
@@ -106,7 +107,7 @@ function barChart(rows, { label = (r) => r.key, value = (r) => r.count, detail =
 
 // ------------------------------------------------------------------ state + routing
 const state = { ws: null, workspaces: [], route: "overview", param: null, job: null, cache: {} };
-const TITLES = { overview: "Overview", incidents: "Incidents", detections: "Detections", sources: "Data sources", rules: "Detection rules", evaluation: "Evaluation" };
+const TITLES = { demo: "Pipeline demo", overview: "Overview", incidents: "Incidents", detections: "Detections", sources: "Data sources", rules: "Detection rules", evaluation: "Evaluation" };
 
 function navigate(route, param) { location.hash = `#/${route}${param ? "/" + param : ""}`; }
 function parseHash() {
@@ -124,7 +125,7 @@ async function render() {
   if (state.route === "incidents" && state.param) title.append(h("span", { class: "crumb", text: ` / ${pad(state.param)}` }));
   const view = clear($("view"));
   const ready = state.workspaces.find((w) => w.name === state.ws && w.analysed);
-  if (!ready && !["sources", "rules"].includes(state.route)) {
+  if (!ready && !["sources", "rules", "demo"].includes(state.route)) {
     view.append(card("No analysed workspace", null, null, emptyState("Nothing analysed yet",
       "Add log files to the input folder (or generate the sample with `make sample`), then run an analysis.",
       h("button", { class: "btn primary", onclick: () => navigate("sources"), text: "Go to Data sources" }))));
@@ -622,14 +623,247 @@ VIEWS.evaluation = async (view) => {
         `${a.path.in_order ? "reconstructed in order" : "not in order"} in ${pad(a.path.incident_id)} · dossier DP chain ${a.strongest_chain.in_order ? "complete" : `misses steps ${(a.strongest_chain.missing_found_steps || []).join(", ")}`}`))))));
 };
 
+// ------------------------------------------------------------------ pipeline demo (walkthrough)
+// Shows the stored output of every stage for data/demo/demo_events.log (5 events), one step at a time.
+const DEMO_STEPS = [
+  ["ingest", "Ingest"], ["normalise", "Normalise & store"], ["detect", "Detect & flag"], ["aggregate", "Aggregate alerts"],
+  ["correlate", "Correlate"], ["graph", "Attack graph"], ["path", "Reconstruct path"], ["rest", "Risk, reach & evidence"]];
+let demoCy = null;
+
+function flow(items) {
+  const f = h("div", { class: "flow" });
+  items.forEach((it, i) => {
+    if (i) f.append(h("div", { class: "flow-arrow", text: "→" }));
+    f.append(h("div", { class: "flow-box" }, h("div", { class: "flow-k", text: it[0] }), h("div", { class: "flow-v", text: it[1] })));
+  });
+  return f;
+}
+function stage(n, title, flowItems, ...body) {
+  return h("section", { class: "card" },
+    h("div", { class: "card-h" }, h("span", { class: "stage-num", text: n }), h("h2", { text: title })),
+    h("div", { class: "card-b stack" }, flowItems ? flow(flowItems) : null, ...body));
+}
+const evName = (w, eid) => { const i = w.lines.findIndex((l) => l.event_id === eid); return i >= 0 ? `E${i + 1}` : String(eid); };
+const okPill = (t) => h("span", { class: "pill ok-pill" }, h("span", { class: "dot" }), t);
+const noPill = (t) => h("span", { class: "pill" }, h("span", { class: "dot muted-dot" }), t);
+const badPill = (t) => h("span", { class: "pill bad-pill" }, h("span", { class: "dot" }), t);
+function eventGist(l) {
+  const e = l.envelope;
+  const detail = e.command_line || (e.bytes_out ? `${fmtBytes(e.bytes_out)} sent to ${e.dst_ip}` : "") ||
+    (e.target_user ? `created account ${e.target_user}` : "") || (e.src_ip ? `from ${e.src_ip}` : "") || e.process || "";
+  return `${e.event_type} · ${e.user || "?"} @ ${e.host || "?"}${detail ? " · " + detail : ""}`;
+}
+
+VIEWS.demo = async (view) => {
+  const step = Math.min(DEMO_STEPS.length, Math.max(1, parseInt(state.param || "1", 10) || 1));
+  const demoWs = state.workspaces.find((w) => w.name === "demo");
+  const running = state.job && state.job.state === "running";
+  const runBtn = h("button", { class: "btn primary", type: "button", disabled: running, text: demoWs && demoWs.analysed ? "Re-run demo pipeline" : "Run demo pipeline", onclick: () => startRun("demo") });
+  if (!demoWs || !demoWs.analysed) {
+    view.append(card("Pipeline demo", "data/demo/demo_events.log · 5 events", runBtn, emptyState("Run the demo first",
+      "Click “Run demo pipeline” (or run `make demo`). ForgeTrace ingests the 5-event demo file and this page then walks through every stage’s real output.")));
+    return;
+  }
+  const w = await api("/walkthrough?ws=demo");
+  const strip = h("div", { class: "stages" }, DEMO_STEPS.map(([, label], i) =>
+    h("button", { type: "button", class: `stage-pill${i + 1 === step ? " active" : ""}${i + 1 < step ? " done" : ""}`, onclick: () => navigate("demo", i + 1) },
+      h("span", { class: "n", text: i + 1 }), label)));
+  const nav = h("div", { class: "demo-nav" },
+    h("button", { class: "btn", type: "button", disabled: step === 1, text: "← Previous", onclick: () => navigate("demo", step - 1) }),
+    h("span", { class: "muted small", text: `Step ${step} of ${DEMO_STEPS.length}` }),
+    h("button", { class: "btn primary", type: "button", disabled: step === DEMO_STEPS.length, text: "Next →", onclick: () => navigate("demo", step + 1) }));
+  const head = card("Pipeline demo", `${w.files.map((f) => f.file).join(", ")} · ${w.lines.length} raw events · one stage per step`, runBtn,
+    h("div", { class: "card-b stack" }, strip,
+      h("div", { class: "demo-events" }, w.lines.map((l, i) => h("div", { class: `demo-ev${l.label ? " flagged" : ""}` },
+        h("span", { class: "ev-tag", text: `E${i + 1}` }), h("span", { class: "small", text: eventGist(l) }))))));
+  const body = h("div");
+  view.append(h("div", { class: "stack" }, head, body, nav));
+  ({ 1: demoIngest, 2: demoNormalise, 3: demoDetect, 4: demoAggregate, 5: demoCorrelate, 6: demoGraph, 7: demoPath, 8: demoRest })[step](body, w);
+};
+
+function demoIngest(body, w) {
+  const pre = h("pre", { class: "raw", text: w.lines[0].raw });
+  const sel = h("div", { class: "muted small", text: "Raw line E1 (click a row to show another):" });
+  const tb = h("tbody", null, w.lines.map((l, i) => {
+    const tr = h("tr", { class: `click${i === 0 ? " selected" : ""}` },
+      h("td", { class: "mono", text: `E${i + 1}` }), h("td", { class: "num", text: l.line_no }), h("td", { class: "num", text: l.byte_offset }),
+      h("td", { class: "num", text: l.length }), h("td", null, h("span", { class: "chip mono", text: l.format })),
+      h("td", { class: "mono small", text: `(${l.file_id} << 48) | ${l.byte_offset} = ${l.event_id}` }), h("td", { class: "mono", text: l.display_id }),
+      h("td", { class: "mono small", text: `${l.sha256.slice(0, 16)}…`, title: l.sha256 }));
+    tr.addEventListener("click", () => { tb.querySelectorAll("tr").forEach((x) => x.classList.remove("selected")); tr.classList.add("selected"); pre.textContent = l.raw; sel.textContent = `Raw line E${i + 1} (click a row to show another):`; });
+    return tr;
+  }));
+  body.append(stage(1, "Ingest — stream the file line by line",
+    [["Input", `${w.files[0].file} (${fmtBytes(w.files[0].size)})`], ["Read", `${w.lines.length} lines, streamed`], ["Output", `${w.lines.length} raw events, each with an event_id`]],
+    h("div", { class: "scroll" }, h("table", { class: "t" }, h("thead", null, h("tr", null, ["Event", "Line", "Byte offset", "Bytes", "Format", "event_id = (file_id << 48) | offset", "Display ID", "SHA-256"].map((c) => h("th", { text: c })))), tb)),
+    sel, pre));
+}
+
+function demoNormalise(body, w) {
+  let cur = 0;
+  const tabs = h("div", { class: "seg" });
+  const pane = h("div");
+  const draw = () => {
+    tabs.querySelectorAll("button").forEach((b, i) => b.classList.toggle("active", i === cur));
+    const l = w.lines[cur], t = l.trace;
+    clear(pane);
+    if (t.error) { pane.append(h("div", { class: "callout warn", text: t.error })); return; }
+    pane.append(h("div", { class: "split" },
+      h("div", null, h("div", { class: "lbl", text: `1 · Raw ${t.format} line (${t.raw_field_count} vendor fields)` }), h("pre", { class: "raw", text: l.raw }),
+        t.ignored_vendor_fields.length ? h("div", { class: "small muted" }, "Present but deliberately not mapped (vendor verdicts are never used for detection): ",
+          t.ignored_vendor_fields.map((x) => h("span", { class: "chip mono", text: x }))) : null),
+      h("div", { class: "split-arrow", text: "↓  config/field_map.yaml" }),
+      h("div", null, h("div", { class: "lbl", text: "2 · Normalised envelope (one row in Parquet)" }),
+        h("table", { class: "t" }, h("thead", null, h("tr", null, ["Envelope field", "From vendor field", "Raw value", "Stored value", "How"].map((c) => h("th", { text: c })))),
+          h("tbody", null, t.mapping.map((m) => h("tr", null, h("td", { class: "mono", text: m.field }), h("td", { class: "mono small", text: m.source }),
+            h("td", { class: "mono small truncate", text: m.raw ?? "—", title: m.raw ?? "" }), h("td", { class: "mono small truncate", text: String(m.value ?? "—"), title: String(m.value ?? "") }),
+            h("td", { class: "small", text: m.how }))))))));
+  };
+  w.lines.forEach((l, i) => tabs.append(h("button", { type: "button", onclick: () => { cur = i; draw(); } }, `E${i + 1}`, h("span", { class: "muted", text: ` ${l.format}` }))));
+  const st = w.storage;
+  body.append(stage(2, "Normalise & store — one schema for every log format",
+    [["Raw line", "JSON or CEF text"], ["field_map.yaml", "vendor field → envelope field"], ["Envelope row", "~40 typed columns"], ["Storage", `${st.parquet_files.map((p) => p.name).join(", ")}`]],
+    tabs, pane,
+    h("div", { class: "kpis" },
+      [["Rows stored", st.rows], ["Columns", st.columns], ["Parse errors", st.parse_errors], ["Parquet size", fmtBytes(st.parquet_files.reduce((a, p) => a + p.bytes, 0))]].map(([k, v]) =>
+        h("div", { class: "kpi" }, h("div", { class: "label", text: k }), h("div", { class: "value", text: v })))),
+    h("div", { class: "small muted", text: `Query layer: ${st.duckdb}. Source fingerprint (SHA-256) recorded at ingest: ${st.manifest[0].sha256}` })));
+  draw();
+}
+
+function demoDetect(body, w) {
+  const fired = w.rules.filter((r) => r.matched.length);
+  const rows = w.lines.map((l, i) => h("div", { class: `det-row${l.label ? " hit" : ""}` },
+    h("span", { class: "ev-tag", text: `E${i + 1}` }),
+    h("div", { class: "small grow" }, eventGist(l)),
+    l.label ? h("div", { class: "det-out" },
+      h("div", null, badPill("Flagged"), " ", h("strong", { class: "mono", text: `${l.label.primary_rule} · ${l.label.primary_technique}` }), " ", h("span", { text: l.label.primary_tactic })),
+      l.label.also_matched.length ? h("div", { class: "small muted", text: `also matched ${l.label.also_matched.map((a) => `${a.rule_id} ${a.technique_id}`).join(", ")} → kept as secondary label` }) : null)
+      : h("div", { class: "det-out" }, noPill("Not flagged"), h("span", { class: "small muted", text: " no rule condition matched — normal activity" }))));
+  body.append(stage(3, "Detect & flag — YAML rules compiled to SQL",
+    [["Envelope rows", `${w.lines.length} events`], ["Rules evaluated", `${w.rules.length} rules`], ["Rules that fired", `${fired.length}`], ["Detections", `${w.detections.length}`]],
+    h("div", { class: "stack-sm" }, rows),
+    h("table", { class: "t" }, h("thead", null, h("tr", null, ["Detection", "Rule", "Technique", "Tactic", "Events", "Why it fired"].map((c) => h("th", { text: c })))),
+      h("tbody", null, w.detections.map((d) => h("tr", null, h("td", { class: "mono small", text: d.detection_id }), h("td", null, h("span", { class: "mono", text: d.rule_id }), h("div", { class: "muted small", text: d.rule_title })),
+        h("td", { class: "mono", text: `${d.technique_id}` }), h("td", { text: d.tactic }), h("td", { class: "mono", text: d.member_event_ids.map((x) => evName(w, x)).join(", ") }), h("td", { class: "small", text: d.evidence })))))));
+}
+
+function demoAggregate(body, w) {
+  const folded = w.groups.flatMap((g) => g.also_matched.map((a) => ({ ...a, into: g.group_id })));
+  body.append(stage(4, "Aggregate alerts — merge repeats, fold secondary labels",
+    [["Detections", `${w.detections.length}`], ["Merge rule", "same rule + entities, gap ≤ 15 min"], ["Alert groups", `${w.groups.length}`], ["Folded", `${folded.length} secondary label(s)`]],
+    h("table", { class: "t" }, h("thead", null, h("tr", null, ["Alert group", "Rule", "Technique · tactic", "Detections merged", "raw_alert_count", "Events", "Entities", "Also matched (folded)"].map((c) => h("th", { text: c })))),
+      h("tbody", null, w.groups.map((g) => h("tr", null, h("td", { class: "mono", text: g.group_id }), h("td", { class: "mono", text: g.rule_id }),
+        h("td", null, h("span", { class: "mono", text: g.technique_id }), h("div", { class: "muted small", text: g.tactic })),
+        h("td", { class: "mono small", text: g.detection_ids.join(", ") }), h("td", { class: "num", text: g.raw_alert_count }),
+        h("td", { class: "mono", text: g.member_event_ids.map((x) => evName(w, x)).join(", ") }),
+        h("td", null, Object.entries(g.entities).filter(([k]) => ["user", "target_user", "host", "src_ip", "dst_ip", "logon_id"].includes(k)).map(([k, v]) => h("span", { class: "chip mono", text: `${k}=${v.join("|")}` }))),
+        h("td", { class: "small", text: g.also_matched.map((a) => `${a.rule_id} ${a.technique_id} (${a.tactic})`).join(", ") || "—" }))))),
+    folded.length ? h("div", { class: "callout small", text: folded.map((f) => `${f.rule_id} (${f.technique_id}) fired on the same event as ${f.into}; label priority made it a secondary label, so it is folded into ${f.into} instead of becoming its own node.`).join(" ") } ) : null));
+}
+
+function demoCorrelate(body, w) {
+  const kept = w.candidate_edges.filter((e) => e.kept).length;
+  const W = w.weights;
+  body.append(stage(5, "Correlate — link alert groups that share an entity",
+    [["Alert groups", `${w.groups.length}`], ["Shared entities", `${Object.keys(w.shared_entities).length}`], ["Candidate pairs", `${w.candidate_edges.length}`], ["Kept edges", `${kept} (θ ≥ ${w.theta_edge})`]],
+    h("div", null, h("div", { class: "lbl", text: "Entity index: entities seen in more than one group" }),
+      h("div", { class: "kv" }, Object.entries(w.shared_entities).flatMap(([k, v]) => [h("div", { class: "mono", text: k }), h("div", { class: "mono", text: v.join(", ") })]))),
+    h("div", { class: "formula mono", text: `s = clip( ${W.L}·L + ${W.T}·T + ${W.P}·P + ${W.R}·R − ${W.F}·F )    L = links via shared entities · T = e^(−Δt/τ) · P = tactic progression · R = impact · F = common-entity penalty` }),
+    h("div", { class: "scroll" }, h("table", { class: "t" }, h("thead", null, h("tr", null, ["Pair (earlier → later)", "Why linked (shared entities)", "Δt", "L", "T", "P", "R", "F", "Score", "Decision"].map((c, i) => h("th", { class: i >= 2 && i <= 8 ? "num" : null, text: c })))),
+      h("tbody", null, w.candidate_edges.map((e) => h("tr", { class: e.kept ? null : "dropped" },
+        h("td", { class: "mono", text: `${e.src_group_id} → ${e.dst_group_id}` }),
+        h("td", null, e.reasons.map((r) => h("span", { class: "chip mono", text: `${r.type} ${r.entity_key.split(":").slice(1).join(":")}` }))),
+        h("td", { class: "num", text: `${Math.round(e.delta_t_s)}s` }),
+        ...["L", "T", "P", "R", "F"].map((k) => h("td", { class: "num mono", text: e.score_terms[k] })),
+        h("td", { class: "num mono" }, h("strong", { text: e.score })),
+        h("td", null, e.kept ? okPill("kept") : badPill(e.decision.replace(/^dropped: /, "dropped: "))))))))));
+}
+
+function demoGraph(body, w) {
+  const inc = w.incidents[0];
+  const box = h("div", { id: "demo-graph" });
+  body.append(stage(6, "Attack graph — connected components become incidents",
+    [["Kept edges", `${w.candidate_edges.filter((e) => e.kept).length}`], ["Components", `${w.incidents.length + w.abstained.length}`], ["Gate", "≥ 2 distinct tactics"], ["Incidents", `${w.incidents.length}`]],
+    box,
+    inc ? h("div", { class: "callout small" }, `Component {${inc.group_ids.join(", ")}} spans ${inc.tactics.length} tactics (${inc.tactics.join(", ")}) → promoted to `, h("strong", { text: pad(inc.incident_id) }), ".",
+      w.abstained.length ? ` ${w.abstained.length} other component(s) stayed unlinked.` : " No other components.") : h("div", { class: "callout warn", text: "No component passed the gate." })));
+  if (!inc) return;
+  const nodes = Object.fromEntries(inc.observed.nodes.map((n) => [n.group_id, n]));
+  const order = inc.inferred.primary_path.group_ids;
+  const els = order.map((g, i) => ({ data: { id: g, label: `${g}\n${nodes[g].tactic}\n${nodes[g].technique_id} · ${nodes[g].rule_id}` }, position: { x: i * 230, y: i % 2 ? 120 : 0 } }));
+  inc.inferred.edges.forEach((e) => els.push({ data: { id: e.edge_id, source: e.src_group_id, target: e.dst_group_id, label: e.score.toFixed(2) } }));
+  if (demoCy) demoCy.destroy();
+  const ink = cssVar("--text-primary"), muted = cssVar("--text-muted"), accent = cssVar("--accent");
+  demoCy = cytoscape({ container: box, elements: els, layout: { name: "preset", fit: true, padding: 40 }, userZoomingEnabled: false, maxZoom: 1.4,
+    style: [
+      { selector: "node", style: { shape: "round-rectangle", width: 170, height: 62, "background-color": cssVar("--surface-2"), "border-width": 2, "border-color": accent,
+        label: "data(label)", "text-wrap": "wrap", "font-size": 12, color: ink, "text-valign": "center" } },
+      { selector: "edge", style: { width: 2, "line-style": "dashed", "line-color": muted, "target-arrow-color": muted, "target-arrow-shape": "triangle", "curve-style": "bezier",
+        label: "data(label)", "font-size": 11, color: ink, "text-background-color": cssVar("--surface-1"), "text-background-opacity": 1, "text-background-padding": 2 } }] });
+}
+
+function demoPath(body, w) {
+  const inc = w.incidents[0];
+  if (!inc) { body.append(stage(7, "Reconstruct path", null, h("div", { class: "muted", text: "No incident to reconstruct." }))); return; }
+  const nodes = Object.fromEntries(inc.observed.nodes.map((n) => [n.group_id, n]));
+  const pp = inc.inferred.primary_path, sc = inc.inferred.strongest_chain;
+  const chain = h("div", { class: "chain" });
+  pp.group_ids.forEach((g, i) => {
+    if (i) {
+      const hop = pp.hops[i - 1];
+      chain.append(h("div", { class: "chain-link" }, h("div", { class: "mono small", text: hop.edge_id ? `${hop.score}` : "—" }), h("div", { class: "arrow", text: "→" }),
+        h("div", { class: "muted small", text: hop.edge_id ? (hop.note ? `via ${hop.edge_id}` : "direct edge") : "no edge" })));
+    }
+    const n = nodes[g];
+    chain.append(h("div", { class: "chain-node" }, h("div", { class: "muted small", text: `${i + 1} · ${fmtTs(n.ts_first).slice(11, 19)}` }), h("strong", { text: n.tactic }),
+      h("div", { class: "mono small", text: `${n.technique_id} ${n.technique_name}` }), h("div", { class: "evlinks small" }, n.member_event_ids.map((x) => evLink(x, evName(w, x), "demo")))));
+  });
+  const notes = pp.hops.filter((hp) => hp.note).map((hp) => {
+    const direct = w.candidate_edges.find((e) => e.src_group_id === hp.from && e.dst_group_id === hp.to);
+    const why = direct ? `the pair ${hp.from} → ${hp.to} scored ${direct.score} and was dropped in step 5 (below θ ${w.theta_edge})` : `${hp.from} and ${hp.to} share no entity`;
+    return hp.edge_id ? `Hop ${hp.from} → ${hp.to} has no direct edge: ${why}. ${hp.to} is still part of the story because it links from an earlier step via ${hp.edge_id} (score ${hp.score}).`
+      : `Hop ${hp.from} → ${hp.to}: ${why}; it is in the same connected component.`;
+  });
+  body.append(stage(7, "Reconstruct the attack path — order the story",
+    [["Incident", pad(inc.incident_id)], ["Ordering", "time → tactic order"], ["Steps", `${pp.group_ids.length}`], ["Stages", pp.stages.join(" → ")]],
+    chain,
+    notes.length ? h("div", { class: "callout small", text: notes.join(" ") }) : null,
+    h("div", { class: "small muted", text: `For comparison, the dossier’s score-maximising chain (J = ${sc.objective_J}) is ${sc.group_ids.join(" → ")}.` })));
+}
+
+function demoRest(body, w) {
+  const inc = w.incidents[0];
+  const v = w.verify;
+  const parts = [];
+  if (inc) {
+    const r = inc.inferred.reachability, best = inc.inferred.containment_candidates[0];
+    parts.push(h("div", { class: "grid g3" },
+      h("div", { class: "mini" }, h("div", { class: "lbl", text: "Risk score" }), h("div", { class: "big" }, `${inc.risk_score}`, " ", sevPill(inc.severity)),
+        h("div", { class: "small muted", text: Object.entries(inc.risk_terms).map(([k, x]) => `${k} ${x}`).join(" + ") + " (× 100)" })),
+      h("div", { class: "mini" }, h("div", { class: "lbl", text: "Reachable critical assets" }), h("div", { class: "big", text: `${r.critical_reachable} / ${r.total_critical_assets}` }),
+        h("div", { class: "small muted", text: r.reachable.map((a) => `${a.asset} (reach ${a.reach}: ${a.path_edges.map((e) => `${e.relation}/${e.kind}`).join(" → ")})`).join("; ") || "none" })),
+      h("div", { class: "mini" }, h("div", { class: "lbl", text: "Best containment (simulated)" }),
+        h("div", { class: "big", text: best ? `${best.before} → ${best.after}` : "—" }), h("div", { class: "small muted", text: best ? `disable_account(${best.action.target}); nothing is actually changed` : "no candidate" }))));
+    parts.push(h("div", { class: "small" }, h("strong", { text: "Compromised set (from the incident): " }), r.compromised.map((c) => h("span", { class: "chip mono", title: c.reason, text: `${c.node} · ${c.weight}` }))));
+  }
+  if (v) parts.push(h("div", { class: "callout small" }, h("strong", { text: "Evidence check: " }), `event ${v.display_id} (line ${v.line_no}) was re-read from ${v.file} at byte ${v.byte_offset} and re-hashed → `,
+    v.verified ? okPill("verified: SHA-256 matches") : badPill("not verified"), " ", evLink(v.event_id, "open raw line", "demo")));
+  parts.push(h("div", null, h("button", { class: "btn primary", type: "button", text: `Open ${inc ? pad(inc.incident_id) : "incidents"} in the investigation view`,
+    onclick: async () => { await switchWs("demo"); navigate("incidents", inc ? inc.incident_id : null); } })));
+  body.append(stage(8, "Risk, reachability, containment & evidence — in brief",
+    [["Incident", inc ? pad(inc.incident_id) : "—"], ["Risk", inc ? `${inc.risk_score} (${inc.severity})` : "—"], ["Reach", inc ? `${inc.inferred.reachability.critical_reachable} critical` : "—"], ["Evidence", v && v.verified ? "verified" : "—"]],
+    ...parts));
+}
+
 // ------------------------------------------------------------------ evidence drawer
 let evRaw = "";
-async function openEvidence(eid) {
+async function openEvidence(eid, ws) {
   const d = $("drawer"); d.classList.add("open");
   const meta = clear($("ev-meta")), raw = $("ev-raw"), badge = clear($("ev-badge"));
   raw.textContent = "Loading…";
   try {
-    const r = await api(wsq(`/events/${eid}/raw`));
+    const r = await api(`/events/${eid}/raw?ws=${encodeURIComponent(ws || state.ws || "")}`);
     evRaw = r.raw || "";
     badge.append(r.verified ? h("span", { class: "pill ok-pill" }, h("span", { class: "dot" }), "Verified · SHA-256 match")
       : h("span", { class: "pill bad-pill" }, h("span", { class: "dot" }), `Not verified · ${r.reason}`));

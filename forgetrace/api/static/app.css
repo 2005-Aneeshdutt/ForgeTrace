@@ -206,3 +206,46 @@ table.t { width: 100%; border-collapse: collapse; font-size: 12px; }
 details summary { cursor: pointer; color: var(--text-secondary); }
 pre.sql { white-space: pre-wrap; font-family: var(--mono); font-size: 11px; background: var(--surface-2); padding: 8px; border-radius: 6px; margin: 6px 0 0; }
 .grow { flex: 1; }
+
+/* ---------- pipeline demo ---------- */
+.stages { display: flex; flex-wrap: wrap; gap: 6px; }
+.stage-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); background: var(--surface-1); border-radius: 999px; padding: 4px 12px 4px 4px; cursor: pointer; color: var(--text-secondary); }
+.stage-pill .n { width: 20px; height: 20px; border-radius: 50%; background: var(--surface-3); color: var(--text-primary); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.stage-pill.done .n { background: var(--accent-weak); color: var(--accent-ink); }
+.stage-pill.active { border-color: var(--accent); color: var(--text-primary); font-weight: 600; }
+.stage-pill.active .n { background: var(--accent); color: #fff; }
+.stage-num { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.flow { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
+.flow-box { flex: 1; min-width: 150px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; background: var(--surface-2); }
+.flow-k { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.flow-v { font-weight: 600; margin-top: 2px; }
+.flow-arrow { align-self: center; color: var(--accent); font-size: 18px; font-weight: 700; }
+.demo-events { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px; }
+.demo-ev { display: flex; gap: 8px; align-items: baseline; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--surface-2); min-width: 0; }
+.demo-ev .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.demo-ev.flagged { border-left: 3px solid var(--critical); }
+.ev-tag { font-family: var(--mono); font-weight: 700; font-size: 11px; background: var(--surface-3); border-radius: 4px; padding: 1px 6px; flex: none; }
+.demo-nav { display: flex; justify-content: space-between; align-items: center; }
+pre.raw { white-space: pre-wrap; word-break: break-all; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-family: var(--mono); font-size: 11.5px; margin: 4px 0 0; }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.seg button { border: none; background: var(--surface-1); padding: 5px 12px; cursor: pointer; border-right: 1px solid var(--border); }
+.seg button:last-child { border-right: none; }
+.seg button.active { background: var(--accent); color: #fff; }
+.seg button.active .muted { color: #e6eefc; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.split-arrow { text-align: center; color: var(--accent); font-size: 22px; font-weight: 700; line-height: 1; }
+.lbl { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.stack-sm > * + * { margin-top: 6px; }
+.det-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); }
+.det-row.hit { border-left: 3px solid var(--critical); }
+.det-out { flex: none; text-align: right; }
+.muted-dot { background: var(--text-muted); }
+tr.dropped td { opacity: .7; }
+.formula { background: var(--surface-2); border: 1px dashed var(--border-strong); border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+#demo-graph { height: 320px; border: 1px solid var(--border); border-radius: 6px; position: relative; background: var(--surface-1); }
+.chain { display: flex; align-items: stretch; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.chain-node { min-width: 170px; border: 2px solid var(--accent); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); }
+.chain-link { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 70px; text-align: center; }
+.chain-link .arrow { color: var(--accent); font-size: 20px; font-weight: 700; line-height: 1; }
+.mini { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.mini .big { font-size: 22px; font-weight: 650; margin: 2px 0 4px; }
