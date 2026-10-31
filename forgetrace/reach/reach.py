@@ -27,11 +27,14 @@ def compromised_set(incident: dict, gid: dict) -> dict[str, dict]:
     C: dict[str, dict] = {}
 
     def add(node, weight, reason, eids):
+        # Group member ids are sorted, so the 50 smallest of a union come from the first 50 of each list;
+        # Phase 1 rebuilt a set of the whole group per entity (millions of ids on firex-50G).
+        head = eids[:50]
         cur = C.get(node)
         if cur is None or weight > cur["weight"]:
-            C[node] = {"node": node, "weight": weight, "reason": reason, "evidence_event_ids": sorted(eids)[:50]}
+            C[node] = {"node": node, "weight": weight, "reason": reason, "evidence_event_ids": sorted(head)[:50]}
         elif weight == cur["weight"]:
-            cur["evidence_event_ids"] = sorted(set(cur["evidence_event_ids"]) | set(eids))[:50]
+            cur["evidence_event_ids"] = sorted(set(cur["evidence_event_ids"]) | set(head))[:50]
 
     for v in incident["group_ids"]:
         g = gid[v]

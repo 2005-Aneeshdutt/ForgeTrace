@@ -547,3 +547,24 @@ def stream_status(ws: str | None = None) -> dict[str, Any]:
     if p is None or not p.exists():
         raise HTTPException(404, f"no stream status for workspace {name!r}")
     return json.loads(p.read_text())
+
+
+@app.get("/incidents/{incident_id}/events")
+def incident_events(incident_id: int, ws: str | None = None, offset: int = 0, limit: int = 200) -> dict[str, Any]:
+    """Page through every member event of an incident (its record embeds at most a sample, D-75)."""
+    limit = max(1, min(limit, 2000))
+    offset = max(0, offset)
+    p = _payload(incident_id, ws)
+    c = con(ws)
+    total = c.execute("""SELECT count(DISTINCT m) FROM alert_groups g, unnest(CAST(g.member_event_ids AS BIGINT[])) u(m)
+                         WHERE g.group_id IN (SELECT unnest(?))""", [p["group_ids"]]).fetchone()[0]
+    have = {r[0] for r in c.execute("DESCRIBE events").fetchall()}  # older workspaces lack later fields
+    cols = [k for k in ["event_id", "ts", "line_no", "event_type", "user", "host", "src_ip", "dst_ip", "dst_port",
+                        "url", "message"] if k in have]
+    rows = c.execute(f"""WITH ids AS (SELECT DISTINCT m AS event_id FROM alert_groups g,
+                                     unnest(CAST(g.member_event_ids AS BIGINT[])) u(m) WHERE g.group_id IN (SELECT unnest(?)))
+                        SELECT {", ".join("e." + k for k in cols)}
+                        FROM events e JOIN ids USING (event_id) ORDER BY e.ts, e.event_id LIMIT ? OFFSET ?""",
+                     [p["group_ids"], limit, offset]).fetchall()
+    return {"incident_id": incident_id, "total": total, "offset": offset, "limit": limit,
+            "events": [{**dict(zip(cols, r)), "ts": str(r[1])} for r in rows]}

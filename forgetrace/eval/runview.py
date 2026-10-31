@@ -58,14 +58,15 @@ def load_run(run_dir: Path) -> RunView:
         f"SELECT detection_id, {det_sql}, technique_id, member_event_ids, ts_first, duplicate_of "
         f"FROM detections ORDER BY detection_id").fetchall()]
     labels = dict(con.execute("SELECT event_id, primary_technique FROM event_labels").fetchall())
-    g_of_d = {}
-    for gid, dids in con.execute("SELECT group_id, detection_ids FROM alert_groups").fetchall():
+    g_of_d, gmembers = {}, {}
+    for gid, dids, mem in con.execute("SELECT group_id, detection_ids, member_event_ids FROM alert_groups").fetchall():
         for d in json.loads(dids):
             g_of_d[d] = gid
+        gmembers[gid] = json.loads(mem)  # full membership (incident records may embed a truncated list)
     incs = []
     for (js,) in con.execute("SELECT json FROM incident_cache ORDER BY incident_id").fetchall():
         p = json.loads(js)
-        nodes = {n["group_id"]: list(n["member_event_ids"]) for n in p["observed"]["nodes"]}
+        nodes = {n["group_id"]: gmembers.get(n["group_id"], list(n["member_event_ids"])) for n in p["observed"]["nodes"]}
         tech = {n["group_id"]: n["technique_id"] for n in p["observed"]["nodes"]}
         dids = sorted(d for d, g in g_of_d.items() if g in nodes)
         incs.append(Incident(p["incident_id"], float(p.get("risk_score") or 0), nodes, tech,

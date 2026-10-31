@@ -143,6 +143,14 @@ def analyse(con: duckdb.DuckDBPyConnection, out: Path, stages: dict, report, gra
     return det, res, payloads, graph_stats
 
 
+# An incident record embeds at most this many member ids per node and timeline rows; full membership
+# stays in the alert_groups table (GET /incidents/{id}/events pages it). On firex-50G the timestamp
+# clamp yields groups with millions of members, and embedding them stalled the run (DECISIONS D-75).
+MAX_NODE_MEMBERS = 10_000
+MAX_TIMELINE_EVENTS = 2_000
+TIMELINE_SAMPLE_PER_NODE = 100
+
+
 def build_payloads(con: duckdb.DuckDBPyConnection, res: dict) -> list[dict]:
     cfg = config.correlation()
     gid = {g["group_id"]: g for g in res["groups"]}
@@ -156,6 +164,9 @@ def build_payloads(con: duckdb.DuckDBPyConnection, res: dict) -> list[dict]:
         for v in inc["group_ids"]:
             g = dict(gid[v])
             g["criticality"] = max([assets.criticality(h) for h in g["entities"]["host"]] or [assets.default_criticality()])
+            if len(g["member_event_ids"]) > MAX_NODE_MEMBERS:
+                g["member_event_ids"] = g["member_event_ids"][:MAX_NODE_MEMBERS]
+                g["member_event_ids_truncated"] = True
             nodes.append(g)
         max_crit = max(n["criticality"] for n in nodes)
         rw = cfg["risk"]
@@ -169,7 +180,17 @@ def build_payloads(con: duckdb.DuckDBPyConnection, res: dict) -> list[dict]:
         risk = round(100 * sum(terms.values()), 1)
         bands = cfg["severity_bands"]
         sev = "high" if risk >= bands["high"] else "medium" if risk >= bands["medium"] else "low"
-        mem = sorted({x for n in nodes for x in n["member_event_ids"]})
+        full = [gid[v]["member_event_ids"] for v in inc["group_ids"]]
+        total = sum(len(m) for m in full)
+        truncated = None
+        if total <= MAX_TIMELINE_EVENTS:
+            mem = sorted({x for m in full for x in m})
+        else:  # head and tail of every group (members are sorted by event_id = file order)
+            k = TIMELINE_SAMPLE_PER_NODE
+            mem = sorted({x for m in full for x in (m[:k] + m[-k:])})
+            truncated = {"member_events_total": inc["member_event_count"], "shown": len(mem),
+                         "rule": f"first and last {k} member events of each group; page the rest via "
+                                 "GET /incidents/{id}/events"}
         events = timeline(con, mem, nodes)
         entity_keys = sorted({f"{k}:{v}" for n in nodes for k in ("user", "host", "src_ip", "dst_ip")
                               for v in n["entities"][k]})
@@ -181,7 +202,8 @@ def build_payloads(con: duckdb.DuckDBPyConnection, res: dict) -> list[dict]:
             "entity_keys": entity_keys, "abstention_reason": None,
             "config_hash": config.config_hash(), "code_version": config.CODE_VERSION,
             "observed": {"nodes": nodes, "events": events,
-                         "note": "Detections and raw events; every item carries raw event IDs."},
+                         "note": "Detections and raw events; every item carries raw event IDs.",
+                         **({"events_truncated": truncated} if truncated else {})},
             "inferred": {"edges": [eby[e] for e in inc["edge_ids"]], "primary_path": inc["primary_path"],
                          "strongest_chain": inc["strongest_chain"], "reachability": reach,
                          "containment_candidates": cands,
