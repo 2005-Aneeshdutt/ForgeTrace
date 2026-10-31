@@ -47,10 +47,12 @@ def main() -> None:
     ap.add_argument("--report", required=True, help="bench JSON to write")
     ap.add_argument("--label", default="")
     ap.add_argument("--graph", action="store_true", help="pass --graph to forgetrace run")
+    ap.add_argument("--analyse-only", action="store_true", help="re-analyse an already-ingested --out (forgetrace analyse)")
     a = ap.parse_args()
     inp = Path(a.input)
     size = sum(f.stat().st_size for f in ([inp] if inp.is_file() else inp.rglob("*")) if f.is_file())
-    cmd = [sys.executable, "-m", "forgetrace", "run", "--input", str(inp), "--out", a.out] + (["--graph"] if a.graph else [])
+    cmd = ([sys.executable, "-m", "forgetrace", "analyse", "--out", a.out] if a.analyse_only else
+           [sys.executable, "-m", "forgetrace", "run", "--input", str(inp), "--out", a.out]) + (["--graph"] if a.graph else [])
     t0 = time.perf_counter()
     proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     ps = psutil.Process(proc.pid)

@@ -173,6 +173,12 @@ def _keys(g: dict, ipmap: dict) -> dict[str, set[tuple[str, str]]]:
     }
 
 
+# Groups that share hundreds of users or addresses produced edges with up to 957 reasons each on
+# firex-50G (3.3 GB of candidate-edge JSON). Every reason enters the score; an edge stores the strongest
+# MAX_STORED_REASONS and the per-type counts of the rest.
+MAX_STORED_REASONS = 20
+
+
 def candidate_edges(groups: list[dict], ipmap: dict, deg: dict, con: duckdb.DuckDBPyConnection) -> list[dict]:
     cfg = config.correlation()
     rw = cfg["reason_weights"]
@@ -234,8 +240,16 @@ def candidate_edges(groups: list[dict], ipmap: dict, deg: dict, con: duckdb.Duck
         crit = max([assets.criticality(h) for h in b["entities"]["host"]] or [assets.default_criticality()])
         sc = score_edge(reasons, dt, a["tactic_ordinal"], b["tactic_ordinal"], max(a["severity"], b["severity"]),
                         crit, _deg(strongest["entity_key"]), cfg)
+        reasons_total = len(reasons)
+        if reasons_total > MAX_STORED_REASONS:  # scored on all reasons above; store the strongest (D-77)
+            counts: dict[str, int] = defaultdict(int)
+            for r in reasons:
+                counts[r["type"]] += 1
+            reasons = sorted(reasons, key=lambda r: (-r["weight"], r["entity_key"]))[:MAX_STORED_REASONS]
         edges.append({"edge_id": f"{a_id}:{b_id}", "src_group_id": a_id, "dst_group_id": b_id,
                       "reasons": reasons, "strongest_entity": strongest["entity_key"],
+                      **({"reasons_total": reasons_total, "reason_counts": dict(counts)}
+                         if reasons_total > MAX_STORED_REASONS else {}),
                       "strongest_entity_degree": _deg(strongest["entity_key"]), "target_criticality": crit,
                       "score": sc["score"], "score_terms": sc["terms"], "weighted_terms": sc["weighted"],
                       "tau_s": sc["tau_s"], "delta_t_s": round(dt, 3), "kind": "inferred",

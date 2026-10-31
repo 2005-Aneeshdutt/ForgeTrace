@@ -108,6 +108,38 @@ def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None
     return stats
 
 
+def reanalyse(out: Path, graph: bool = False, workspace: str | None = None, progress=None) -> dict:
+    """Re-run detect -> correlate -> reach -> persist (-> graph) on an already-ingested workspace (rule
+    tuning, or a fix after ingest). The ingest of `out` is reused as is; run_stats records that."""
+    report = progress or (lambda stage, frac: None)
+    t0 = time.perf_counter()
+    prev = json.loads((out / "run_stats.json").read_text()) if (out / "run_stats.json").exists() else {}
+    manifest = json.loads((out / "files.json").read_text())
+    db = out / "forgetrace.duckdb"
+    if db.exists():
+        db.unlink()
+    con = store.connect(out)
+    store.create_views(con, out)
+    stages: dict = {}
+    det, res, payloads, graph_stats = analyse(con, out, stages, report, graph, workspace,
+                                              manifest_digest=manifest["manifest_digest"])
+    con.close()
+    (out / "incidents.json").write_text(dumps(payloads))
+    stats = {"stages": stages, "analysis_wall_time_s": round(time.perf_counter() - t0, 3),
+             "ingest_reused": {"stats": manifest["stats"], "parallel": manifest.get("parallel"),
+                               "ingest_s_from_previous_run": prev.get("stages", {}).get("ingest_s")},
+             "peak_rss_bytes": peak_rss_bytes(), "config_hash": config.config_hash(), "code_version": config.CODE_VERSION,
+             "dataset": {"files": manifest["files"], "manifest_digest": manifest["manifest_digest"]},
+             "ingest": manifest["stats"], "detections": det["detections"], "rule_seconds": det["rule_seconds"],
+             "alert_groups": len(res["groups"]), "candidate_edges": len(res["candidate_edges"]),
+             "kept_edges": len(res["edges"]), "incidents": len(payloads), "abstained_components": len(res["abstained"]),
+             "graph": graph_stats if graph else {"skipped": "graph step not requested"},
+             "finished_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+    (out / "run_stats.json").write_text(json.dumps(stats, indent=1, default=str))
+    report("done", 1.0)
+    return stats
+
+
 def analyse(con: duckdb.DuckDBPyConnection, out: Path, stages: dict, report, graph: bool, workspace: str | None,
             manifest_digest: str | None = None, replace_graph: bool = True):
     """Detect -> correlate -> reach -> persist (-> graph) over everything ingested into `out` so far.
@@ -146,6 +178,7 @@ def analyse(con: duckdb.DuckDBPyConnection, out: Path, stages: dict, report, gra
 # An incident record embeds at most this many member ids per node and timeline rows; full membership
 # stays in the alert_groups table (GET /incidents/{id}/events pages it). On firex-50G the timestamp
 # clamp yields groups with millions of members, and embedding them stalled the run (DECISIONS D-75).
+MAX_PERSISTED_CANDIDATES = 100_000  # dropped candidate edges stored (all are scored; run_stats counts all)
 MAX_NODE_MEMBERS = 10_000          # per node, incidents with <= LARGE_INCIDENT_NODES nodes
 MAX_NODE_MEMBERS_LARGE = 200       # per node, larger incidents
 LARGE_INCIDENT_NODES = 50
@@ -285,7 +318,12 @@ def persist(con: duckdb.DuckDBPyConnection, res: dict, payloads: list[dict], rul
                                           "severity", "also_matched", "aggregate_key", "p_malicious", "contributions"])
     table("edges", res["edges"], ["edge_id", "src_group_id", "dst_group_id", "reasons", "score", "score_terms",
                                   "weighted_terms", "delta_t_s", "evidence_event_ids", "connector_event_id", "kind"])
-    table("candidate_edges", res["candidate_edges"], ["edge_id", "src_group_id", "dst_group_id", "score", "score_terms",
+    cand = res["candidate_edges"]
+    if len(cand) > MAX_PERSISTED_CANDIDATES:  # keep every kept edge plus the strongest dropped ones (D-77)
+        kept_ids = {e["edge_id"] for e in res["edges"]}
+        dropped = sorted((e for e in cand if e["edge_id"] not in kept_ids), key=lambda e: (-e["score"], e["edge_id"]))
+        cand = [e for e in cand if e["edge_id"] in kept_ids] + dropped[:MAX_PERSISTED_CANDIDATES]
+    table("candidate_edges", cand, ["edge_id", "src_group_id", "dst_group_id", "score", "score_terms",
                                                       "weighted_terms", "reasons", "delta_t_s", "tau_s",
                                                       "strongest_entity", "strongest_entity_degree",
                                                       "target_criticality", "pruned_reason"])

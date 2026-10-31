@@ -22,6 +22,10 @@ def main() -> None:
     r.add_argument("--dataset", default=None, help="dataset name stamped on every event (e.g. d0, lanl, ait)")
     r.add_argument("--graph", action="store_true", help="also load the run into Neo4j (docs/wp/GR-1.md)")
     r.add_argument("--quiet", action="store_true", help="no progress lines on stderr")
+    an = sub.add_parser("analyse", help="re-run detection..graph on an already-ingested workspace")
+    an.add_argument("--out", required=True)
+    an.add_argument("--graph", action="store_true")
+    an.add_argument("--quiet", action="store_true")
     st = sub.add_parser("stream", help="analyse a file in batches as it is read (or while it grows)")
     st.add_argument("--input", required=True)
     st.add_argument("--out", required=True)
@@ -43,6 +47,12 @@ def main() -> None:
         print(json.dumps({k: stats[k] for k in ("stages", "wall_time_s", "peak_rss_bytes", "ingest", "detections",
                                                 "alert_groups", "kept_edges", "incidents", "abstained_components")},
                          indent=1))
+    elif a.cmd == "analyse":
+        from forgetrace.pipeline import reanalyse
+
+        stats = reanalyse(Path(a.out), graph=a.graph, progress=None if a.quiet else _progress_printer())
+        print(json.dumps({k: stats[k] for k in ("stages", "analysis_wall_time_s", "peak_rss_bytes", "detections",
+                                                "alert_groups", "kept_edges", "incidents")}, indent=1))
     elif a.cmd == "stream":
         import sys
 
