@@ -1,0 +1,337 @@
+{
+ "meta": {
+  "dataset": "t1",
+  "split": "tune",
+  "profile": "validation",
+  "fvs_version": "1.2.0",
+  "seed": 3,
+  "bytes": 30837414,
+  "run": {
+   "wall_s": 5.22,
+   "stats": {
+    "stages": {
+     "ingest_s": 2.99,
+     "detect_rules_plan_s": 0.044,
+     "ml_s": 1.669,
+     "detect_s": 1.871,
+     "correlate_s": 0.225,
+     "reach_and_cache_s": 0.098
+    },
+    "wall_time_s": 5.222,
+    "peak_rss_bytes": 1129480192,
+    "peak_rss_note": "ru_maxrss of the main process; parallel ingest workers are child processes (tools/bench.py samples the whole process tree)",
+    "config_hash": "94c7f8c272ef79ade3609c517734abb7d164ddc740e49672df3ede162de15c10",
+    "code_version": "phase1-0.1.0",
+    "dataset": {
+     "files": [
+      {
+       "file_id": 1,
+       "path": "/Users/dishan/Documents/PES/Final Year/CyberForge By Mitigata/ForgeTrace/Validation dataset/scratch_ref/t1/fvs-tune-3.log",
+       "size": 30837414,
+       "mtime": 1793482748.0,
+       "sha256": "b86f1f89212f6a3338fde227823a2a84bd0ba2023a7ff501fd634dacbce336cb"
+      }
+     ],
+     "manifest_digest": "f22cc02f5b41f779b4c60f3f4218401f85292c0c6486ca8cd44c3e78659d7a7a"
+    },
+    "ingest": {
+     "lines": 59006,
+     "events": 59006,
+     "errors": 0,
+     "empty": 0
+    },
+    "ingest_parallel": {
+     "workers": 1,
+     "ranges": 1,
+     "range_bytes": 67108864
+    },
+    "detections": 111,
+    "rule_seconds": {
+     "R001": 0.005,
+     "R001c": 0.0087,
+     "R011": 0.0037,
+     "F001": 0.015,
+     "F002": 0.0065,
+     "F003": 0.0079,
+     "F004": 0.0017,
+     "F005": 0.0047,
+     "F006": 0.007,
+     "F007": 0.0041,
+     "F008": 0.0079,
+     "F009": 0.0104,
+     "F010": 0.0033,
+     "F011": 0.003,
+     "F012": 0.0038,
+     "F013": 0.0036,
+     "F014": 0.0035,
+     "F015": 0.0037,
+     "F016": 0.0156,
+     "F017": 0.0018,
+     "R002": 0.0027
+    },
+    "alert_groups": 50,
+    "candidate_edges": 73,
+    "kept_edges": 30,
+    "incidents": 3,
+    "abstained_components": 29,
+    "graph": {
+     "skipped": "graph step not requested (--graph or FORGETRACE_GRAPH=1)"
+    },
+    "finished_at": "2026-11-01T05:17:49+05:30"
+   }
+  },
+  "runtime_s": 5.222,
+  "peak_rss_mb": 1077.2,
+  "mb_per_s": 5.9053,
+  "events_parsed": 59006,
+  "parse_errors": 0
+ },
+ "all_steps": {
+  "attacks": 3,
+  "steps": 14,
+  "attack_events": 283,
+  "decoys": 33,
+  "decoy_events": 834,
+  "line_alert": {
+   "tp": 215,
+   "fp": 1351,
+   "fn": 68,
+   "precision": 0.1373,
+   "recall": 0.7597,
+   "f1": 0.2326,
+   "decoy_events_flagged": 753,
+   "decoy_event_rate": 0.9029,
+   "flagged_events": 1566
+  },
+  "line_incident": {
+   "tp": 172,
+   "fp": 192,
+   "fn": 111,
+   "precision": 0.4725,
+   "recall": 0.6078,
+   "f1": 0.5317,
+   "decoy_events_flagged": 44,
+   "decoy_event_rate": 0.0528,
+   "flagged_events": 364
+  },
+  "attack_detection_rate": 1.0,
+  "attack_in_incident_rate": 0.3333,
+  "step_recall": 0.5714,
+  "technique_exact_acc": 0.125,
+  "technique_parent_acc": 0.125,
+  "by_tier": {
+   "hard": {
+    "attacks": 1,
+    "detected": 1,
+    "in_incident": 0,
+    "detection_rate": 1.0,
+    "step_coverage": 0.4444
+   },
+   "medium": {
+    "attacks": 2,
+    "detected": 2,
+    "in_incident": 1,
+    "detection_rate": 1.0,
+    "step_coverage": 0.8
+   }
+  },
+  "decoy_fp_alert_rate": 0.3939,
+  "decoy_fp_incident_rate": 0.1212,
+  "decoys_flagged_alert": 13,
+  "decoys_in_incident": 4,
+  "incidents": 3,
+  "false_alarm_incidents": 2,
+  "false_alarm_incident_share": 0.6667,
+  "latency_min_median": 56.4,
+  "latency_min_max": 80.0,
+  "techniques": {
+   "T1021.001": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1041": {
+    "steps": 2,
+    "found": 2,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1046": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1048.003": {
+    "steps": 1,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1071.001": {
+    "steps": 2,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.5
+   },
+   "T1071.004": {
+    "steps": 1,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1078": {
+    "steps": 1,
+    "found": 1,
+    "exact": 1,
+    "parent": 1,
+    "recall": 1.0
+   },
+   "T1098": {
+    "steps": 1,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1110.001": {
+    "steps": 1,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1566.002": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   }
+  }
+ },
+ "excl_unverified": {
+  "attacks": 3,
+  "steps": 12,
+  "attack_events": 281,
+  "decoys": 33,
+  "decoy_events": 834,
+  "line_alert": {
+   "tp": 213,
+   "fp": 1353,
+   "fn": 68,
+   "precision": 0.136,
+   "recall": 0.758,
+   "f1": 0.2306,
+   "decoy_events_flagged": 753,
+   "decoy_event_rate": 0.9029,
+   "flagged_events": 1566
+  },
+  "line_incident": {
+   "tp": 172,
+   "fp": 192,
+   "fn": 109,
+   "precision": 0.4725,
+   "recall": 0.6121,
+   "f1": 0.5333,
+   "decoy_events_flagged": 44,
+   "decoy_event_rate": 0.0528,
+   "flagged_events": 364
+  },
+  "attack_detection_rate": 1.0,
+  "attack_in_incident_rate": 0.3333,
+  "step_recall": 0.5,
+  "technique_exact_acc": 0.0,
+  "technique_parent_acc": 0.0,
+  "by_tier": {
+   "hard": {
+    "attacks": 1,
+    "detected": 1,
+    "in_incident": 0,
+    "detection_rate": 1.0,
+    "step_coverage": 0.2857
+   },
+   "medium": {
+    "attacks": 2,
+    "detected": 2,
+    "in_incident": 1,
+    "detection_rate": 1.0,
+    "step_coverage": 0.8
+   }
+  },
+  "decoy_fp_alert_rate": 0.3939,
+  "decoy_fp_incident_rate": 0.1212,
+  "decoys_flagged_alert": 13,
+  "decoys_in_incident": 4,
+  "incidents": 3,
+  "false_alarm_incidents": 2,
+  "false_alarm_incident_share": 0.6667,
+  "latency_min_median": 56.4,
+  "latency_min_max": 80.0,
+  "techniques": {
+   "T1021.001": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1041": {
+    "steps": 2,
+    "found": 2,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1046": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1048.003": {
+    "steps": 1,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1071.001": {
+    "steps": 2,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.5
+   },
+   "T1071.004": {
+    "steps": 1,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1110.001": {
+    "steps": 1,
+    "found": 1,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1566.002": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   }
+  }
+ }
+}

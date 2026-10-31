@@ -19,3 +19,6 @@ data/d0/seed_*/
 data/llm_cache/
 data/llm_ledger.jsonl
 data/.pseudo_key
+
+# FVS validation logs + answer keys (read-only evidence; scored by tools/eval_fvs.py)
+Validation dataset/

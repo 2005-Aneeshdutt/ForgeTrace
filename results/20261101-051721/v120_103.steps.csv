@@ -1,0 +1,20 @@
+attack_id,tier,chain,order,step,variant,technique,tactic,events,events_flagged,found,in_incident,predicted,technique_exact,technique_parent,rules,unverified_logid,evasion
+A001,medium,main_prd,1,credential_attack,admin_spray_scattered,T1110.003,Credential Access,126,44,True,False,T1110,False,True,R001,False,False
+A001,medium,main_prd,2,initial_access,admin_login,T1078,Initial Access,1,1,True,False,T1078,True,True,R002,True,False
+A001,medium,main_prd,3,persistence,modify_admin,T1098,Persistence,1,0,False,False,,False,False,,True,False
+A001,medium,main_prd,4,compromise,drive_by,T1189,Initial Access,2,0,False,False,,False,False,,False,False
+A001,medium,main_prd,5,c2,beacon_nonstd_port,T1571,Command and Control,22,0,False,False,,False,False,,False,False
+A001,medium,main_prd,6,lateral_fileserver,smb,T1021.002,Lateral Movement,15,0,False,False,,False,False,,False,False
+A001,medium,main_prd,7,lateral_dc,smb,T1021.002,Lateral Movement,13,0,False,False,,False,False,,False,False
+A001,medium,main_prd,8,exfiltration,dns_exfil,T1048.003,Exfiltration,499,499,True,True,T1071.004,False,False,"F007,ML-UEBA-src_ip",False,False
+A002,hard,beacon_only,1,compromise,drive_by,T1189,Initial Access,3,0,False,False,,False,False,,False,False
+A002,hard,beacon_only,2,c2,beacon_nonstd_port,T1571,Command and Control,14,14,True,False,T1048.002,False,False,F009,False,False
+A002,hard,beacon_only,3,exfiltration,over_c2,T1041,Exfiltration,1,1,True,False,T1048.002,False,False,"F009,R011",False,False
+A003,hard,low_and_slow,1,credential_attack,admin_spray_scattered,T1110.003,Credential Access,19,0,False,False,,False,False,,False,False
+A003,hard,low_and_slow,2,initial_access,admin_login,T1078,Initial Access,1,1,True,False,T1078,True,True,R002,True,False
+A003,hard,low_and_slow,3,persistence,modify_admin,T1098,Persistence,1,0,False,False,,False,False,,True,False
+A003,hard,low_and_slow,4,compromise,phishing_link,T1566.002,Initial Access,5,0,False,False,,False,False,,False,False
+A003,hard,low_and_slow,5,c2,beacon_https,T1071.001,Command and Control,8,0,False,False,,False,False,,False,False
+A003,hard,low_and_slow,6,lateral_fileserver,rdp,T1021.001,Lateral Movement,4,0,False,False,,False,False,,False,False
+A003,hard,low_and_slow,7,lateral_dc,winrm,T1021.006,Lateral Movement,2,0,False,False,,False,False,,False,False
+A003,hard,low_and_slow,8,exfiltration,cloud_storage,T1567.002,Exfiltration,1,1,True,False,T1048.002,False,False,"F009,R011",False,False

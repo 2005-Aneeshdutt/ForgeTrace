@@ -1,0 +1,7 @@
+attack_id,tier,chain,steps,steps_found,step_coverage,detected,in_incident,latency_min
+A001,hard,main_prd,7,1,0.1429,True,False,1752.6
+A002,medium,main_prd,9,6,0.6667,True,False,0.0
+A003,easy,beacon_only,3,2,0.6667,True,False,18.8
+A004,hard,dmz_staging,4,2,0.5,True,False,425.6
+A005,easy,dmz_staging,4,2,0.5,True,True,18.7
+A006,hard,dmz_staging,4,1,0.25,True,False,1219.3

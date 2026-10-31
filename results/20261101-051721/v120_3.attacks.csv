@@ -1,0 +1,4 @@
+attack_id,tier,chain,steps,steps_found,step_coverage,detected,in_incident,latency_min
+A001,hard,main_prd,9,3,0.3333,True,False,0.0
+A002,medium,beacon_only,3,2,0.6667,True,False,80.0
+A003,medium,dns_tunnel,2,2,1.0,True,True,8.8

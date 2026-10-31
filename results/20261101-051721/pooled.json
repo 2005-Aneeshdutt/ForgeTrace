@@ -1,0 +1,72 @@
+{
+ "all_steps": {
+  "attacks": 24,
+  "detected": 24,
+  "in_incident": 9,
+  "attack_detection_rate": 1.0,
+  "attack_in_incident_rate": 0.375,
+  "step_recall": 0.4104,
+  "steps": 134,
+  "by_tier": {
+   "easy": "6/6 detected, 3/6 in incident",
+   "hard": "9/9 detected, 1/9 in incident",
+   "medium": "9/9 detected, 5/9 in incident"
+  },
+  "decoys": 298,
+  "decoys_flagged_alert": 103,
+  "decoys_in_incident": 32,
+  "incidents": 23,
+  "false_alarm_incidents": 14,
+  "line_alert": {
+   "tp": 3198,
+   "fp": 41993,
+   "fn": 1611,
+   "precision": 0.0708,
+   "recall": 0.665,
+   "f1": 0.128
+  },
+  "line_incident": {
+   "tp": 2185,
+   "fp": 30550,
+   "fn": 2624,
+   "precision": 0.0667,
+   "recall": 0.4544,
+   "f1": 0.1163
+  }
+ },
+ "excl_unverified": {
+  "attacks": 24,
+  "detected": 23,
+  "in_incident": 9,
+  "attack_detection_rate": 0.9583,
+  "attack_in_incident_rate": 0.375,
+  "step_recall": 0.3929,
+  "steps": 112,
+  "by_tier": {
+   "easy": "5/6 detected, 3/6 in incident",
+   "hard": "9/9 detected, 1/9 in incident",
+   "medium": "9/9 detected, 5/9 in incident"
+  },
+  "decoys": 298,
+  "decoys_flagged_alert": 103,
+  "decoys_in_incident": 32,
+  "incidents": 23,
+  "false_alarm_incidents": 14,
+  "line_alert": {
+   "tp": 3187,
+   "fp": 42004,
+   "fn": 1544,
+   "precision": 0.0705,
+   "recall": 0.6736,
+   "f1": 0.1276
+  },
+  "line_incident": {
+   "tp": 2184,
+   "fp": 30551,
+   "fn": 2547,
+   "precision": 0.0667,
+   "recall": 0.4616,
+   "f1": 0.1166
+  }
+ }
+}

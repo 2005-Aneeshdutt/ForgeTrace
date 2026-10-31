@@ -1,0 +1,386 @@
+{
+ "meta": {
+  "dataset": "a1",
+  "split": "test",
+  "profile": "adversarial",
+  "fvs_version": "1.2.0",
+  "seed": 202,
+  "bytes": 61567342,
+  "run": {
+   "wall_s": 10.78,
+   "stats": {
+    "stages": {
+     "ingest_s": 6.029,
+     "detect_rules_plan_s": 0.059,
+     "ml_s": 3.873,
+     "detect_s": 4.133,
+     "correlate_s": 0.365,
+     "reach_and_cache_s": 0.195
+    },
+    "wall_time_s": 10.779,
+    "peak_rss_bytes": 758087680,
+    "peak_rss_note": "ru_maxrss of the main process; parallel ingest workers are child processes (tools/bench.py samples the whole process tree)",
+    "config_hash": "94c7f8c272ef79ade3609c517734abb7d164ddc740e49672df3ede162de15c10",
+    "code_version": "phase1-0.1.0",
+    "dataset": {
+     "files": [
+      {
+       "file_id": 1,
+       "path": "/Users/dishan/Documents/PES/Final Year/CyberForge By Mitigata/ForgeTrace/Validation dataset/scratch_ref/a1/fvs-test-202.log",
+       "size": 61567342,
+       "mtime": 1793482798.0,
+       "sha256": "9cc6b797db77ea0a048b37d66c4a877582f21419b3570d398ff6724d1a9ad1c5"
+      }
+     ],
+     "manifest_digest": "aa99790577ded2ab804c111b0014647e4b35c33ad3fd5ae75781a0e30e8e8ba2"
+    },
+    "ingest": {
+     "lines": 117838,
+     "events": 117838,
+     "errors": 0,
+     "empty": 0
+    },
+    "ingest_parallel": {
+     "workers": 1,
+     "ranges": 1,
+     "range_bytes": 67108864
+    },
+    "detections": 130,
+    "rule_seconds": {
+     "R001": 0.006,
+     "R001c": 0.0098,
+     "R011": 0.0039,
+     "F001": 0.0274,
+     "F002": 0.0066,
+     "F003": 0.0082,
+     "F004": 0.002,
+     "F005": 0.0052,
+     "F006": 0.0079,
+     "F007": 0.0044,
+     "F008": 0.0082,
+     "F009": 0.0151,
+     "F010": 0.0034,
+     "F011": 0.0031,
+     "F012": 0.0042,
+     "F013": 0.0039,
+     "F014": 0.0038,
+     "F015": 0.0039,
+     "F016": 0.0292,
+     "F017": 0.0018,
+     "R002": 0.0027
+    },
+    "alert_groups": 78,
+    "candidate_edges": 131,
+    "kept_edges": 38,
+    "incidents": 5,
+    "abstained_components": 43,
+    "graph": {
+     "skipped": "graph step not requested (--graph or FORGETRACE_GRAPH=1)"
+    },
+    "finished_at": "2026-11-01T05:17:32+05:30"
+   }
+  },
+  "runtime_s": 10.779,
+  "peak_rss_mb": 723.0,
+  "mb_per_s": 5.7118,
+  "events_parsed": 117838,
+  "parse_errors": 0
+ },
+ "all_steps": {
+  "attacks": 3,
+  "steps": 20,
+  "attack_events": 963,
+  "decoys": 48,
+  "decoy_events": 1298,
+  "line_alert": {
+   "tp": 449,
+   "fp": 1576,
+   "fn": 514,
+   "precision": 0.2217,
+   "recall": 0.4663,
+   "f1": 0.3005,
+   "decoy_events_flagged": 880,
+   "decoy_event_rate": 0.678,
+   "flagged_events": 2025
+  },
+  "line_incident": {
+   "tp": 448,
+   "fp": 313,
+   "fn": 515,
+   "precision": 0.5887,
+   "recall": 0.4652,
+   "f1": 0.5197,
+   "decoy_events_flagged": 17,
+   "decoy_event_rate": 0.0131,
+   "flagged_events": 761
+  },
+  "attack_detection_rate": 1.0,
+  "attack_in_incident_rate": 0.6667,
+  "step_recall": 0.2,
+  "technique_exact_acc": 0.5,
+  "technique_parent_acc": 0.5,
+  "by_tier": {
+   "easy": {
+    "attacks": 3,
+    "detected": 3,
+    "in_incident": 2,
+    "detection_rate": 1.0,
+    "step_coverage": 0.2
+   }
+  },
+  "decoy_fp_alert_rate": 0.3125,
+  "decoy_fp_incident_rate": 0.0833,
+  "decoys_flagged_alert": 15,
+  "decoys_in_incident": 4,
+  "incidents": 5,
+  "false_alarm_incidents": 3,
+  "false_alarm_incident_share": 0.6,
+  "latency_min_median": 2846.9,
+  "latency_min_max": 4484.7,
+  "techniques": {
+   "T1021.001": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1021.002": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1021.006": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1030": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1046": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1048.003": {
+    "steps": 2,
+    "found": 2,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1071.001": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1071.004": {
+    "steps": 1,
+    "found": 1,
+    "exact": 1,
+    "parent": 1,
+    "recall": 1.0
+   },
+   "T1078": {
+    "steps": 1,
+    "found": 1,
+    "exact": 1,
+    "parent": 1,
+    "recall": 1.0
+   },
+   "T1098": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1110.003": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1133": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1189": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1566.002": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1594": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   }
+  }
+ },
+ "excl_unverified": {
+  "attacks": 3,
+  "steps": 16,
+  "attack_events": 955,
+  "decoys": 48,
+  "decoy_events": 1298,
+  "line_alert": {
+   "tp": 448,
+   "fp": 1577,
+   "fn": 507,
+   "precision": 0.2212,
+   "recall": 0.4691,
+   "f1": 0.3006,
+   "decoy_events_flagged": 880,
+   "decoy_event_rate": 0.678,
+   "flagged_events": 2025
+  },
+  "line_incident": {
+   "tp": 448,
+   "fp": 313,
+   "fn": 507,
+   "precision": 0.5887,
+   "recall": 0.4691,
+   "f1": 0.5221,
+   "decoy_events_flagged": 17,
+   "decoy_event_rate": 0.0131,
+   "flagged_events": 761
+  },
+  "attack_detection_rate": 0.6667,
+  "attack_in_incident_rate": 0.6667,
+  "step_recall": 0.1875,
+  "technique_exact_acc": 0.3333,
+  "technique_parent_acc": 0.3333,
+  "by_tier": {
+   "easy": {
+    "attacks": 3,
+    "detected": 2,
+    "in_incident": 2,
+    "detection_rate": 0.6667,
+    "step_coverage": 0.1875
+   }
+  },
+  "decoy_fp_alert_rate": 0.3125,
+  "decoy_fp_incident_rate": 0.0833,
+  "decoys_flagged_alert": 15,
+  "decoys_in_incident": 4,
+  "incidents": 5,
+  "false_alarm_incidents": 3,
+  "false_alarm_incident_share": 0.6,
+  "latency_min_median": 4484.7,
+  "latency_min_max": 4484.7,
+  "techniques": {
+   "T1021.001": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1021.002": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1021.006": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1030": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1046": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1048.003": {
+    "steps": 2,
+    "found": 2,
+    "exact": 0,
+    "parent": 0,
+    "recall": 1.0
+   },
+   "T1071.001": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1071.004": {
+    "steps": 1,
+    "found": 1,
+    "exact": 1,
+    "parent": 1,
+    "recall": 1.0
+   },
+   "T1110.003": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1189": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1566.002": {
+    "steps": 1,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   },
+   "T1594": {
+    "steps": 2,
+    "found": 0,
+    "exact": 0,
+    "parent": 0,
+    "recall": 0.0
+   }
+  }
+ }
+}

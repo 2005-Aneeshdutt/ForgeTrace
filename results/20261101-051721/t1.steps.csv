@@ -1,0 +1,15 @@
+attack_id,tier,chain,order,step,variant,technique,tactic,events,events_flagged,found,in_incident,predicted,technique_exact,technique_parent,rules,unverified_logid,evasion
+A001,hard,main_prd,1,credential_attack,admin_bruteforce_single,T1110.001,Credential Access,5,4,True,False,T1078,False,False,ML-UEBA-user,False,False
+A001,hard,main_prd,2,initial_access,admin_login,T1078,Initial Access,1,1,True,False,T1078,True,True,R002,True,False
+A001,hard,main_prd,3,persistence,modify_admin,T1098,Persistence,1,1,True,False,T1078,False,False,ML-UEBA-user,True,False
+A001,hard,main_prd,4,compromise,phishing_link,T1566.002,Initial Access,5,0,False,False,,False,False,,False,False
+A001,hard,main_prd,5,c2,beacon_https,T1071.001,Command and Control,10,0,False,False,,False,False,,False,False
+A001,hard,main_prd,6,discovery,sweep_scan,T1046,Discovery,7,0,False,False,,False,False,,False,False
+A001,hard,main_prd,7,lateral_fileserver,rdp,T1021.001,Lateral Movement,5,0,False,False,,False,False,,False,False
+A001,hard,main_prd,8,lateral_dc,rdp,T1021.001,Lateral Movement,2,0,False,False,,False,False,,False,False
+A001,hard,main_prd,9,exfiltration,over_c2,T1041,Exfiltration,1,1,True,False,T1048.002,False,False,"F009,R011",False,False
+A002,medium,beacon_only,1,compromise,phishing_link,T1566.002,Initial Access,4,0,False,False,,False,False,,False,False
+A002,medium,beacon_only,2,c2,beacon_https,T1071.001,Command and Control,32,32,True,False,T1048.002,False,False,F009,False,False
+A002,medium,beacon_only,3,exfiltration,over_c2,T1041,Exfiltration,4,4,True,False,T1048.002,False,False,"F009,R011",False,False
+A003,medium,dns_tunnel,1,dns_c2,dns_tunnel_c2,T1071.004,Command and Control,36,2,True,True,T1078,False,False,"F007,ML-UEBA-src_ip",False,False
+A003,medium,dns_tunnel,2,exfiltration,dns_exfil,T1048.003,Exfiltration,170,170,True,True,T1071.004,False,False,"F007,ML-UEBA-src_ip",False,False
