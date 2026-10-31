@@ -1,9 +1,10 @@
 PY ?= .venv/bin/python
-INPUT ?= data/sample/events.log
+DATA ?= data/sample/events.log
+INPUT ?= $(DATA)
 OUT ?= out
 INPUT_DIR ?= data/input
 
-.PHONY: setup sample run analyze demo score serve test clean
+.PHONY: setup sample run analyze demo score eval bench check serve test clean
 
 setup:
 	python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -25,6 +26,23 @@ demo:
 
 score:
 	$(PY) tools/score.py --gt data/sample/ground_truth.json --out $(OUT)/sample
+
+# Phase 2 evaluation: make eval DS=d0 EXP=E0 [GT=... RUN=...] -> metrics/<DS>/<EXP>.json
+DS ?= d0
+EXP ?= dev
+GT ?= data/sample/ground_truth.json
+RUN ?= $(OUT)/sample
+eval:
+	$(PY) -m forgetrace eval --gt $(GT) --run $(RUN) --dataset $(DS) --experiment $(EXP)
+
+# Throughput + peak RSS of one run: make bench DATA=<file> BENCH=bench/<name>.json
+BENCH ?= bench/latest.json
+bench:
+	$(PY) tools/bench.py --input $(DATA) --out $(OUT)/bench --report $(BENCH)
+
+check:
+	$(PY) -m ruff check forgetrace tools tests
+	$(PY) -m pytest -q
 
 serve:
 	$(PY) -m forgetrace serve --out $(OUT)

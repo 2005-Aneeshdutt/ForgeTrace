@@ -19,7 +19,7 @@ import duckdb
 from forgetrace import config
 from forgetrace.ingest.evidence import get_raw
 from forgetrace.ingest.ingest import line_digest, make_event_id, strip_eol
-from forgetrace.ingest.parsers import ParseError, classify, normalise, parse_cef, parse_json, parse_kv, sniff
+from forgetrace.ingest.parsers import ParseError, normalise, parse_cef, parse_json, parse_kv, sniff
 
 MAX_EVENTS = 200
 SHOWN_FIELDS = ["ts", "source_type", "event_type", "outcome", "user", "target_user", "host", "host_ip", "src_ip",

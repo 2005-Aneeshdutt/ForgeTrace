@@ -1,4 +1,4 @@
-"""CLI: python -m forgetrace run --input FILE... --out DIR | serve --out DIR"""
+"""CLI: python -m forgetrace run --input FILE... --out DIR | serve --out DIR | eval ..."""
 from __future__ import annotations
 
 import argparse
@@ -7,6 +7,13 @@ from pathlib import Path
 
 
 def main() -> None:
+    import sys
+
+    if sys.argv[1:2] == ["eval"]:  # evaluation CLI (reads ground truth; never imported by the pipeline)
+        from forgetrace.eval.cli import main as eval_main
+
+        eval_main(sys.argv[2:])
+        return
     ap = argparse.ArgumentParser(prog="forgetrace")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")

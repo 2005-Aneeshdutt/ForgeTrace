@@ -29,12 +29,22 @@ def test_rerun_is_deterministic_and_does_not_duplicate(sample, tmp_path):
     assert norm(a) == norm(b)
 
 
+def test_pipeline_does_not_import_eval():
+    import subprocess
+    import sys
+    code = ("import sys, forgetrace.pipeline, forgetrace.api.app; "
+            "print([m for m in sys.modules if m.startswith('forgetrace.eval')])")
+    out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    assert out.strip() == "[]"
+
+
 def test_ground_truth_not_imported_by_engine():
     # Ground truth may be read only by evaluation code (forgetrace/eval) and dataset adapters'
     # ground_truth() functions (forgetrace/datasets); the detection path must never touch it.
+    # forgetrace/__main__.py only dispatches the `eval` subcommand; the pipeline never imports it.
     allowed = (ROOT / "forgetrace/eval", ROOT / "forgetrace/datasets")
     for p in (ROOT / "forgetrace").rglob("*.py"):
-        if any(a in p.parents for a in allowed):
+        if any(a in p.parents for a in allowed) or p == ROOT / "forgetrace/__main__.py":
             continue
         src = p.read_text()
         for banned in ("ground_truth", "GroundTruth", "forgetrace.eval", "from forgetrace import eval"):

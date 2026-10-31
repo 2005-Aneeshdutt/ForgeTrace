@@ -1,0 +1,14 @@
+line-length = 140
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W"]
+
+# Phase 1 files kept as written (long fixture literals, compact CEF state machine).
+[lint.per-file-ignores]
+"forgetrace/api/walkthrough.py" = ["E501"]
+"forgetrace/ingest/parsers.py" = ["E702"]
+"tests/test_demo.py" = ["E741"]
+"tests/test_ingest_evidence.py" = ["E501"]
+"tests/test_rules.py" = ["E501"]
+"tools/gen_scenarios.py" = ["E501"]
