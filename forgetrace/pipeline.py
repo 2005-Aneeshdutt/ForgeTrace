@@ -66,8 +66,14 @@ def expand_inputs(paths: list[Path]) -> list[Path]:
     return out
 
 
-def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None) -> dict:
-    """progress(stage, fraction) is optional; used by the API's background runs."""
+def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None, graph: bool | None = None,
+        workspace: str | None = None) -> dict:
+    """progress(stage, fraction) is optional; used by the API's background runs and the CLI.
+    graph=True (or FORGETRACE_GRAPH=1) loads the run into Neo4j after correlation (docs/wp/GR-1.md);
+    an unreachable server skips that step with a reason and never fails the run."""
+    import os
+
+    graph = graph if graph is not None else os.environ.get("FORGETRACE_GRAPH") == "1"
     inputs = expand_inputs(inputs)
     report = progress or (lambda stage, frac: None)
     t0 = time.perf_counter()
@@ -99,6 +105,17 @@ def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None
     payloads = build_payloads(con, res)
     stages["reach_and_cache_s"] = round(time.perf_counter() - t, 3)
     persist(con, res, payloads, rules)
+    graph_stats = None
+    if graph:
+        from forgetrace.graph.loader import load_run as graph_load
+
+        t = time.perf_counter()
+        report("graph", 0.96)
+        graph_stats = graph_load(con, workspace or out.name, {"workspace": workspace or out.name,
+                                                               "config_hash": config.config_hash(),
+                                                               "manifest_digest": manifest["manifest_digest"]},
+                                 progress=lambda step, done, total: report(f"graph:{step}", 0.96 + 0.03 * done / max(total, 1)))
+        stages["graph_s"] = round(time.perf_counter() - t, 3)
     con.close()
     (out / "incidents.json").write_text(dumps(payloads))
     stats = {"stages": stages, "wall_time_s": round(time.perf_counter() - t0, 3), "peak_rss_bytes": peak_rss_bytes(),
@@ -109,7 +126,8 @@ def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None
              "ingest": manifest["stats"], "ingest_parallel": manifest.get("parallel"),
              "detections": det["detections"], "rule_seconds": det["rule_seconds"],
              "alert_groups": len(res["groups"]), "candidate_edges": len(res["candidate_edges"]),
-             "kept_edges": len(res["edges"]), "incidents": len(payloads), "abstained_components": len(res["abstained"])}
+             "kept_edges": len(res["edges"]), "incidents": len(payloads), "abstained_components": len(res["abstained"]),
+             "graph": graph_stats if graph else {"skipped": "graph step not requested (--graph or FORGETRACE_GRAPH=1)"}}
     stats["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
     (out / "run_stats.json").write_text(json.dumps(stats, indent=1, default=str))
     report("done", 1.0)

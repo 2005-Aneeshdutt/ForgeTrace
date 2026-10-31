@@ -1,0 +1,11 @@
+# Graph store scope (docs/wp/GR-1.md, DECISIONS D-62/D-63). Raw events always stay in Parquet; this
+# file decides which relationships are materialised in Neo4j.
+uri: bolt://127.0.0.1:7687        # overridden by NEO4J_URI
+user: neo4j                       # overridden by NEO4J_USER; password only from NEO4J_PASSWORD
+database: neo4j
+batch_rows: 10000                 # rows per UNWIND transaction
+sample_event_ids: 5               # raw event_ids kept on each aggregated relationship
+connections:
+  internal_to_internal: true      # lateral movement candidates: always loaded
+  touching_alert_ips: true        # any connection whose src or dst IP is an alert entity
+  all: false                      # true loads every src->dst pair (9.9M pairs on firex-10G; not recommended)

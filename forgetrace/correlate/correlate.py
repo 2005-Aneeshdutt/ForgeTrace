@@ -261,19 +261,36 @@ def _evidence_ids(edges: list[dict], gid: dict, con: duckdb.DuckDBPyConnection) 
         for ip, host in con.execute("SELECT DISTINCT host_ip, host FROM events WHERE host_ip IS NOT NULL "
                                     "AND host IS NOT NULL").fetchall():
             ips_of_host[host].add(ip)
+    # Per-group index (field, value) -> member event ids, built once per group: an edge then costs one
+    # lookup per reason instead of a scan of both groups' members (groups can hold 10^4+ events).
+    gindex: dict[str, dict[tuple[str, object], list[int]]] = {}
+
+    def index_of(g: dict) -> dict[tuple[str, object], list[int]]:
+        ix = gindex.get(g["group_id"])
+        if ix is None:
+            ix = defaultdict(list)
+            for m in g["member_event_ids"]:
+                row = rows.get(m)
+                if row is not None:
+                    for c in fields:
+                        if row[c] is not None:
+                            ix[(c, row[c])].append(m)
+            gindex[g["group_id"]] = ix
+        return ix
+
     for e in edges:
         ids = set()
         for r in e["reasons"]:
             t, v = r["entity_key"].split(":", 1)
             cols = ["host"] if r["type"] == "pivot_host" else col.get(t, [])
-            if cols:
-                for g in (gid[e["src_group_id"]], gid[e["dst_group_id"]]):
-                    ids.update(m for m in g["member_event_ids"]
-                               if m in rows and any(rows[m][c] == v for c in cols))
+            for g in (gid[e["src_group_id"]], gid[e["dst_group_id"]]):
+                ix = index_of(g)
+                for c in cols:
+                    ids.update(ix.get((c, v), ()))
             if r["type"] == "pivot_host":  # the pivoting event: b's member whose src_ip resolves to a's host
-                hips = ips_of_host.get(v, set())
-                ids.update(m for m in gid[e["dst_group_id"]]["member_event_ids"]
-                           if m in rows and rows[m]["src_ip"] in hips)
+                ix = index_of(gid[e["dst_group_id"]])
+                for ip in ips_of_host.get(v, ()):
+                    ids.update(ix.get(("src_ip", ip), ()))
         e["evidence_event_ids"] = sorted(ids)[:200]
 
 

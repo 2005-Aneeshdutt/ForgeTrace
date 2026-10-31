@@ -7,3 +7,9 @@ fastapi==0.162.0
 uvicorn==0.54.0
 networkx==3.6.1
 pytest==9.2.0
+# Phase 2 (pre-approved in docs/PHASE2.md, or approved by the owners: neo4j)
+numpy==2.4.6
+psutil==7.2.2
+hypothesis==6.170.14
+ruff==0.17.3
+neo4j==6.4.1

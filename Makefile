@@ -4,7 +4,7 @@ INPUT ?= $(DATA)
 OUT ?= out
 INPUT_DIR ?= data/input
 
-.PHONY: setup sample run analyze demo score eval bench check serve test clean
+.PHONY: setup sample run analyze demo score eval bench check serve test clean graph-up graph-down
 
 setup:
 	python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -14,7 +14,7 @@ sample:
 
 # Dev sample -> workspace out/sample (scored against ground truth)
 run:
-	$(PY) -m forgetrace run --input $(INPUT) --out $(OUT)/sample
+	$(PY) -m forgetrace run --input $(INPUT) --out $(OUT)/sample $(if $(GRAPH),--graph,)
 
 # Your own logs: every log file in data/input/ -> workspace out/input
 analyze:
@@ -39,6 +39,12 @@ eval:
 BENCH ?= bench/latest.json
 bench:
 	$(PY) tools/bench.py --input $(DATA) --out $(OUT)/bench --report $(BENCH)
+
+# Neo4j graph store (docs/wp/GR-1.md): make graph-up, then `make run GRAPH=1` or `forgetrace run --graph`
+graph-up:
+	docker compose -f deploy/neo4j/docker-compose.yml up -d
+graph-down:
+	docker compose -f deploy/neo4j/docker-compose.yml down
 
 check:
 	$(PY) -m ruff check forgetrace tools tests

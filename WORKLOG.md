@@ -32,6 +32,8 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
 | STEP 0 | PHASE2.md saved; STATE.md; bench harness; 10 GB baseline | prompt saved verbatim and committed; state + gaps written; 10 GB measured | PASS (py-spy replaced by cProfile: needs root on macOS) | `e6d64a3`, docs/STATE.md, bench/baseline.json |
 | EV-0 | Pydantic models + Arrow schemas; pipeline emits detector/score/reasons, p_malicious/contributions, dataset | "Freeze interfaces … tests for round-trip" | PASS | tests/test_models.py (7 tests) |
 | EV-1 | `forgetrace eval`, metrics schema, bootstrap, multi-seed | "every metric unit-tested on a toy ground truth with a hand-computed answer; writes metrics/<ds>/<exp>.json" | PASS (reach hit@k and time-to-first-incident reported N/A until CO-4/SC-4) | tests/test_eval_metrics.py (12 tests); dev sample equals tools/score.py |
+| SC (partial) | Parallel byte-range ingest (9 workers on M2 Pro), linear-time detection and correlation, memoised normalisers | output identical to previous code; finish 10 GB in minutes | PASS | tests/test_engine_windows.py, tests/test_parallel_ingest.py; byte-identical outputs on 7 datasets; bench/after_fix_dense_10g.json (did not finish in 69 min → 119 s); bench/firex-10G.json (provided file: 125 s, 3.9 GB peak) |
+| GR-1 | Neo4j graph store (hybrid with Parquet), loader, API, progress | load complete, idempotent, evidence ids real, queries < 500 ms | PASS | tests/test_graph.py; firex-10G graph load 6.4 s; neighbour query 369 ms |
 | EV-2 | 20-seed D0 suite | "Seeds 1–10 tuning, 11–20 test; byte-identical regeneration" | PASS | tests/test_suite.py; data/d0/suite.json |
 
 ## Metrics (make score, seed 7)

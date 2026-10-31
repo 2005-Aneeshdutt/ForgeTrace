@@ -498,3 +498,36 @@ def run_status() -> dict[str, Any]:
     if "started" in j:
         j["elapsed_s"] = round((j.get("finished") or time.time()) - j["started"], 2)
     return j
+
+
+# ----------------------------------------------------------------------------- graph store (docs/wp/GR-1.md)
+def _graph(fn, *args, **kw):
+    from forgetrace.graph import queries
+
+    try:
+        return getattr(queries, fn)(*args, **kw)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:  # server unreachable
+        raise HTTPException(503, f"graph store unavailable: {e}")
+
+
+@app.get("/graph/status")
+def graph_status() -> dict[str, Any]:
+    return _graph("status")
+
+
+@app.get("/graph/incidents/{incident_id}")
+def graph_incident(incident_id: int, ws: str | None = None) -> dict[str, Any]:
+    return _graph("incident_graph", ws or default_ws(), incident_id)
+
+
+@app.get("/graph/neighbors")
+def graph_neighbors(key: str, ws: str | None = None, limit: int = 100) -> dict[str, Any]:
+    limit = max(1, min(limit, 500))
+    return _graph("neighbors", ws or default_ws(), key, limit)
+
+
+@app.get("/graph/reach")
+def graph_reach(user: str, ws: str | None = None, max_hops: int = 3, min_criticality: float = 0.8) -> dict[str, Any]:
+    return _graph("reach_paths", ws or default_ws(), user, max_hops, min_criticality)
