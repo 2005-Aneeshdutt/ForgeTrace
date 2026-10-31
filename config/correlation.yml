@@ -1,0 +1,44 @@
+# Correlation parameters (dossier §12). Every value is the dossier default unless marked.
+agg_gap_s: 900            # repeated-detection aggregation gap (15 min default)
+window_s: 21600           # max candidate-edge window: b.ts_first <= a.ts_last + 6 h (brief: 6 h max)
+skew_s: 60                # tolerate b starting slightly before a (clock skew)
+
+weights:                  # s = clip(0.45 L + 0.20 T + 0.20 P + 0.10 R - 0.25 F)
+  L: 0.45
+  T: 0.20
+  P: 0.20
+  R: 0.10
+  F: 0.25
+
+reason_weights:           # noisy-OR terms for L
+  same_session: 0.35
+  same_proc_tree: 0.30
+  pivot_host: 0.30
+  pivot_ip: 0.25
+  same_hash_or_domain: 0.20
+  same_user: 0.20
+  same_host: 0.15
+  observed_connector: 0.25
+
+tau_s: 1800               # T = exp(-dt / tau)
+tau_same_user_only_s: 7200  # 2 h when same_user is the only reason (worked example uses 30 min with same_user+same_host)
+
+progression:              # P by tactic ordinal delta (b - a)
+  forward: 1.0
+  same: 0.7
+  one_back: 0.4
+  further_back: 0.1
+
+degree_saturation: 500    # F = min(1, log10(1+deg)/log10(1+500))
+theta_edge: 0.45          # keep threshold
+k_degree: 3               # max in/out kept edges per node
+min_distinct_tactics: 2   # abstention gate: incident needs >= 2 distinct tactics
+path_lambda: 1.0          # J = sum log(s_e) + lambda * sum n(v); n(v) = severity/4 * confidence
+theta_path: null          # path abstention threshold (null = never abstain on J in Phase 1)
+
+risk:                     # WP-17 B-1 risk score weights
+  severity: 0.35
+  criticality: 0.25
+  tactic_depth: 0.20
+  reach: 0.20
+severity_bands: {high: 70, medium: 40}

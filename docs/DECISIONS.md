@@ -25,3 +25,11 @@
 - D-22 Duplicate suppression (§12 step 1) at detection level: a detection whose members are a subset of a stronger same-technique detection gets duplicate_of and is excluded from correlation (R001 ⊂ R001c on A1).
 - D-23 followed_by semantics: follower must occur within `within` after ≥count window members; members = those members + follower.
 - D-24 Technique table is a hand-curated ATT&CK subset in config/attack.yml (STIX build script deferred); rule load rejects unknown techniques and invalid technique/tactic pairs.
+- D-25 Correlation weights, reason weights, τ, P matrix, F saturation (500), θ_edge 0.45, K 3 are the dossier §12 defaults (config/correlation.yml); τ = 2 h only when same_user is the sole reason (matches the §12 worked example, which uses 30 min with same_user+same_host).
+- D-26 Max candidate window 6 h (brief) instead of per-reason windows; skew tolerance 60 s.
+- D-27 entity degree (F term): user→distinct hosts, host→distinct users, ip→distinct hosts using it as src/dst, domain→distinct hosts; strongest linking entity = highest reason weight, ties → highest degree (conservative).
+- D-28 Detections whose member events all carry a different primary technique (label priority) are folded into the primary group as `also_matched` rather than becoming separate nodes (e.g. R004 on the R003 event, R008 on the R002 event).
+- D-29 raw_alert_count = number of detections merged into the group (aggregation gap 15 min); member_event_count reported separately.
+- D-30 Primary path = all incident groups ordered by (ts_first, tactic ordinal, first event_id) as the brief's Step 5 specifies; each hop cites its kept edge or says none exists. The dossier §12 step 8 DP (J = Σ log s + λ Σ n, λ = 1) is kept as `strongest_chain`; with dossier defaults it drops weakly-linked tail steps, so it is reported but not used as primary. Conflict noted deliberately.
+- D-31 Abstention gate = ≥ 2 distinct tactics (brief); the dossier's alternative "critical group + corroboration" route and θ_incident/θ_path are not used in Phase 1.
+- D-32 Risk (WP-17): 100 × (0.35·maxsev/4 + 0.25·max node criticality + 0.20·deepest ordinal/14 + 0.20·critical reachable/total critical); bands high ≥ 70, medium ≥ 40.
