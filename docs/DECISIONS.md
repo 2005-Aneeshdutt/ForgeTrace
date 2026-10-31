@@ -38,3 +38,4 @@
 - D-35 total_critical_assets = hosts named in the fixture with criticality ≥ 0.8.
 - D-36 API: brief's `/incidents/{id}/reach` plus dossier alias `/reachability`; `/alerts?unlinked=true` and `/rules` included; `/report` and `/metrics` deferred. Strict CSP (script/style 'self'); all log-derived strings rendered with textContent; Cytoscape canvas labels are not HTML.
 - D-37 event_id values stay below 2^53 for file_id < 32, so they are exact as JavaScript numbers in the dashboard.
+- D-38 Scoring: step found = any detection (incl. duplicates/folded) whose members intersect the step's lines; predicted label = the step events' primary technique; path order evaluated on the primary path with the dossier DP chain reported as a secondary line; runtime/peak RSS read from run_stats.json (ru_maxrss of the single run process).
