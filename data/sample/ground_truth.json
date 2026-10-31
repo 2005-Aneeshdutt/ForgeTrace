@@ -1,0 +1,430 @@
+{
+ "dataset": {
+  "file": "events.log",
+  "file_id": 1,
+  "sha256": "99c4c378e1ae130410c21e7e6471be4ae3953c3d2191c16a3d0cdb4a9b31f435",
+  "lines": 20129,
+  "seed": 7,
+  "start": "2026-10-01T00:00:00Z",
+  "days": 2,
+  "events": 20000,
+  "cef_ratio": 0.1,
+  "with_tags": false
+ },
+ "attacks": [
+  {
+   "attack_id": "A1",
+   "decoy": false,
+   "steps": [
+    {
+     "order": 1,
+     "technique": "T1110",
+     "tactic": "Credential Access",
+     "description": "50 failed RDP authentications (4625) from one external IP",
+     "event_ids": [
+      281474984362923,
+      281474984364702,
+      281474984366726,
+      281474984367635,
+      281474984367951,
+      281474984369339,
+      281474984370008,
+      281474984372175,
+      281474984374365,
+      281474984376414,
+      281474984378125,
+      281474984380389,
+      281474984381058,
+      281474984382897,
+      281474984384346,
+      281474984386392,
+      281474984389310,
+      281474984389979,
+      281474984390648,
+      281474984391317,
+      281474984393508,
+      281474984394177,
+      281474984396353,
+      281474984399257,
+      281474984400228,
+      281474984404002,
+      281474984405471,
+      281474984407865,
+      281474984408534,
+      281474984409506,
+      281474984412472,
+      281474984413947,
+      281474984416415,
+      281474984417865,
+      281474984419326,
+      281474984421489,
+      281474984422158,
+      281474984423532,
+      281474984425675,
+      281474984427795,
+      281474984432836,
+      281474984435393,
+      281474984436742,
+      281474984438876,
+      281474984439545,
+      281474984440500,
+      281474984441169,
+      281474984441838,
+      281474984442507,
+      281474984443609
+     ],
+     "line_nos": [
+      10925,
+      10928,
+      10931,
+      10933,
+      10934,
+      10936,
+      10937,
+      10940,
+      10943,
+      10946,
+      10949,
+      10952,
+      10953,
+      10956,
+      10958,
+      10961,
+      10965,
+      10966,
+      10967,
+      10968,
+      10971,
+      10972,
+      10975,
+      10979,
+      10981,
+      10986,
+      10988,
+      10992,
+      10993,
+      10995,
+      10999,
+      11001,
+      11005,
+      11007,
+      11009,
+      11012,
+      11013,
+      11015,
+      11018,
+      11021,
+      11028,
+      11032,
+      11034,
+      11037,
+      11038,
+      11040,
+      11041,
+      11042,
+      11043,
+      11045
+     ],
+     "source_event_ids": [
+      "082e9fa7-84dc-4c6b-987b-ce2c46971daf",
+      "71554f1e-e45c-44e2-b0c5-fa0c96d351bd",
+      "2170e69c-80a9-45ef-921e-46788ec47347",
+      "d36720c8-598c-4c5f-849c-6ddddcac14f7",
+      "f646fba5-629f-4f21-8815-16d4b80a590a",
+      "5db44fa7-8d89-4c1b-95da-815af15bb155",
+      "959e6be0-a2a0-4a4b-b51c-e0dbdb314398",
+      "e22e6a47-e201-4347-9232-36c08cb7d8f8",
+      "3a36c7c0-acbd-4ed4-a778-3ce873f747ea",
+      "2b998a51-e9d8-4515-b8da-80016600a218",
+      "727a58c3-0d56-4547-a5ab-7ad6646d2aef",
+      "7102b2b9-bc3a-4b6b-bd1e-6a89280b9088",
+      "d611fb9f-4134-45b4-b196-1b78b9a5c198",
+      "277f53dd-7d76-4921-adad-bdb4616b3ca9",
+      "2d9b11c8-0c7f-40eb-8c2e-dccf4e288183",
+      "e51763bb-6a91-44ac-b4b9-9856a149af9d",
+      "992ca80a-58a6-4c44-ab7d-bfb5bb565ece",
+      "b72f9d0f-6b8c-45ef-92ef-7169620f0932",
+      "19704ea3-634b-4489-8432-db525ad8ce24",
+      "a00212be-37c3-40dc-a81c-f1f9d09b2ff8",
+      "d7738e89-0cf5-41c4-8ec0-5dae52ecba97",
+      "a9d99d62-4cdc-4685-8a32-deac3620d7d9",
+      "51dbff83-13fe-454c-b928-eb4a47b5c6be",
+      "2c53d83c-7fc6-4a68-8fbd-e1e5518d091f",
+      "14c14de9-a333-4858-b15d-323b63c03705",
+      "3ec7ddb8-72b1-4ef0-9853-9b864c4d3c6c",
+      "5b6b2829-cc70-44aa-bcef-e0a016e0d0a6",
+      "70a720ee-ebfa-460e-b315-1ae0d11b5b05",
+      "8f58dd96-311a-43cc-b49f-c796b0fc9617",
+      "759278f3-a18d-49b0-8b52-afd0e5c49d87",
+      "3d65260c-489a-4ffe-a846-8843f80ac0ae",
+      "0f5259f6-5ebd-470f-9331-955f9b3bb6d8",
+      "8ccffe1a-a628-466f-8361-54c0d4f2c9e9",
+      "cbe02109-ec7a-4c70-b397-d1670971bfd8",
+      "d47506b7-2fd9-41ff-926b-3bfae52ad199",
+      "7b52c619-fe96-4864-a14c-e5af98a82461",
+      "b1842fab-b947-4ce4-a15b-f887d02b4d7c",
+      "c5887644-6420-4f23-a594-67720a523072",
+      "90ee33c4-3a72-46e6-ad96-b87d6c83d886",
+      "98b4be1a-eb43-4082-ac67-6e2f53a4b738",
+      "38fd8c2d-95f0-46e4-9452-82fded8813de",
+      "68076d09-d40b-41a3-96ab-593cee97a1d7",
+      "104eafde-0161-4b4b-b069-f9726ce050df",
+      "5e7fe2f5-b4e0-48bc-9494-b9f8e42d405a",
+      "497bd5a2-17cf-47d0-baa5-390b887bc5e2",
+      "45db262c-6acd-409b-ae80-afa0cd68695d",
+      "90f7da46-7906-4eab-a6ab-2a8959027d7c",
+      "4557cbcf-d571-4e92-9d52-e227f3df7df6",
+      "91b54ce3-2c98-4def-96e6-4e4f954fc685",
+      "f7b482ea-9f1c-4d90-b098-581bf2f024c4"
+     ]
+    },
+    {
+     "order": 2,
+     "technique": "T1078",
+     "tactic": "Initial Access",
+     "description": "Successful authentication (4624) after the burst",
+     "event_ids": [
+      281474984452710
+     ],
+     "line_nos": [
+      11058
+     ],
+     "source_event_ids": [
+      "a1ff42cd-a32b-4393-9a95-aeb672b10694"
+     ]
+    },
+    {
+     "order": 3,
+     "technique": "T1136.001",
+     "tactic": "Persistence",
+     "description": "Local account created (4720)",
+     "event_ids": [
+      281474984485085
+     ],
+     "line_nos": [
+      11103
+     ],
+     "source_event_ids": [
+      "3158c586-6910-47f4-b5e7-9a9b17c2d566"
+     ]
+    },
+    {
+     "order": 4,
+     "technique": "T1098",
+     "tactic": "Privilege Escalation",
+     "description": "New account added to Administrators (4732)",
+     "event_ids": [
+      281474984504070
+     ],
+     "line_nos": [
+      11130
+     ],
+     "source_event_ids": [
+      "98fe6585-3c6d-4c3a-b656-31dd3ddec346"
+     ]
+    },
+    {
+     "order": 5,
+     "technique": "T1021.002",
+     "tactic": "Lateral Movement",
+     "description": "Network logon to the file server from the entry host",
+     "event_ids": [
+      281474984547628
+     ],
+     "line_nos": [
+      11190
+     ],
+     "source_event_ids": [
+      "a86a12f6-5f8f-48e2-aad3-dd0f581fdf34"
+     ]
+    },
+    {
+     "order": 6,
+     "technique": "T1041",
+     "tactic": "Exfiltration",
+     "description": "150 MB outbound transfer to the attacker IP",
+     "event_ids": [
+      281474984607158
+     ],
+     "line_nos": [
+      11276
+     ],
+     "source_event_ids": [
+      "d9b3ea9d-2ba2-4b42-b017-69b1a22f76cd"
+     ]
+    }
+   ]
+  },
+  {
+   "attack_id": "A2",
+   "decoy": false,
+   "steps": [
+    {
+     "order": 1,
+     "technique": "T1204.002",
+     "tactic": "Execution",
+     "description": "winword.exe opens attachment",
+     "event_ids": [
+      281474980957288
+     ],
+     "line_nos": [
+      6060
+     ],
+     "source_event_ids": [
+      "28c1f44f-e83e-4123-bc3a-a7590612cea7"
+     ]
+    },
+    {
+     "order": 2,
+     "technique": "T1059.001",
+     "tactic": "Execution",
+     "description": "powershell -nop -w hidden -enc spawned by Word",
+     "event_ids": [
+      281474980963894
+     ],
+     "line_nos": [
+      6069
+     ],
+     "source_event_ids": [
+      "1f633147-367b-4725-a041-65d4e98b6aa7"
+     ]
+    },
+    {
+     "order": 3,
+     "technique": "T1547.001",
+     "tactic": "Persistence",
+     "description": "Run-key write by PowerShell",
+     "event_ids": [
+      281474980979802
+     ],
+     "line_nos": [
+      6092
+     ],
+     "source_event_ids": [
+      "faa1a688-aee9-4b56-9df4-eb884d01760c"
+     ]
+    },
+    {
+     "order": 4,
+     "technique": "T1071.001",
+     "tactic": "Command and Control",
+     "description": "12 low-byte beacons to a rare external IP",
+     "event_ids": [
+      281474981027845,
+      281474981051286,
+      281474981078425,
+      281474981102534,
+      281474981127423,
+      281474981147150,
+      281474981175269,
+      281474981198280,
+      281474981229475,
+      281474981256135,
+      281474981289121,
+      281474981315023
+     ],
+     "line_nos": [
+      6163,
+      6199,
+      6237,
+      6273,
+      6310,
+      6340,
+      6379,
+      6413,
+      6457,
+      6495,
+      6542,
+      6580
+     ],
+     "source_event_ids": [
+      "454e3515-e67c-4433-843e-9f5a5a415103",
+      "80f54f37-ed06-48b0-bc82-67d15250da99",
+      "dc44bfbd-8c45-44e9-a5c6-f7fefd0cd2e1",
+      "779fbcb8-d4ac-45ba-ac42-92cfd31a10ed",
+      "20f74f53-cbf3-4c29-b0fc-3b273d4958a0",
+      "1b3514d5-4c73-4564-9487-f270a679072f",
+      "753388ba-f66a-4d4b-ae21-71a2c7879d9d",
+      "8f57b4f8-221e-4bd4-9ddf-19c5297306c3",
+      "e663713a-54c4-4d67-a59e-d0b0e0e14ea2",
+      "9c9fac6f-b3c2-4aee-b024-6ac1ce7de56a",
+      "e00bfa49-83e9-425c-a7e1-891e9a034ca8",
+      "09a10ae0-fbb6-4ee1-97db-f0f6947774ee"
+     ]
+    },
+    {
+     "order": 5,
+     "technique": "T1021.001",
+     "tactic": "Lateral Movement",
+     "description": "RDP logon to the database server",
+     "event_ids": [
+      281474981380831
+     ],
+     "line_nos": [
+      6676
+     ],
+     "source_event_ids": [
+      "5f3f6dcf-6650-4895-a310-d41436634d2a"
+     ]
+    }
+   ]
+  },
+  {
+   "attack_id": "D1",
+   "decoy": true,
+   "steps": [
+    {
+     "order": 1,
+     "technique": "T1136.001",
+     "tactic": "Persistence",
+     "description": "IT admin creates a new-hire account (benign)",
+     "event_ids": [
+      281474986455955
+     ],
+     "line_nos": [
+      13920
+     ],
+     "source_event_ids": [
+      "8f4c1b54-552d-4c15-a5bf-e9a68ebb38f8"
+     ]
+    },
+    {
+     "order": 2,
+     "technique": "T1098",
+     "tactic": "Persistence",
+     "description": "Account added to a normal department group (benign)",
+     "event_ids": [
+      281474986467291
+     ],
+     "line_nos": [
+      13936
+     ],
+     "source_event_ids": [
+      "25adbe0f-f002-4622-87b4-64df552654a6"
+     ]
+    },
+    {
+     "order": 3,
+     "technique": "T1110",
+     "tactic": "Credential Access",
+     "description": "Three typo login failures (benign)",
+     "event_ids": [
+      281474986566294,
+      281474986746255,
+      281474986947391
+     ],
+     "line_nos": [
+      14077,
+      14336,
+      14621
+     ],
+     "source_event_ids": [
+      "427b2f5c-3f27-42e1-aa35-e8473b016561",
+      "282dcf3a-1019-4eb5-8174-646fffa1d746",
+      "73cd03ac-4a95-4829-89a4-f116e8c25dd4"
+     ]
+    }
+   ]
+  }
+ ]
+}
