@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ForgeTrace</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/vendor/cytoscape.min.js"></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header><strong>ForgeTrace</strong> <span id="health" class="muted"></span></header>
+<main>
+  <aside id="left">
+    <h2>Incidents</h2>
+    <div id="incident-list"></div>
+    <h2>Unlinked alerts (abstained)</h2>
+    <div id="unlinked" class="muted small"></div>
+  </aside>
+  <section id="right">
+    <div id="empty" class="muted">Select an incident.</div>
+    <div id="detail" hidden>
+      <h2 id="inc-title"></h2>
+      <div id="inc-meta" class="small"></div>
+      <div id="risk-terms" class="small muted"></div>
+      <h3>Attack sequence (primary path)</h3>
+      <ol id="path" class="path"></ol>
+      <div id="chain" class="small muted"></div>
+      <h3>Attack graph <span class="muted small">nodes = alert groups, dashed edges = inferred (score shown); click an edge or node</span></h3>
+      <div id="graph"></div>
+      <div id="sel" class="panel small"></div>
+      <h3>Timeline (supporting raw events)</h3>
+      <table id="timeline"><thead><tr><th>time (UTC)</th><th>event</th><th>line</th><th>type</th><th>technique (primary / also)</th><th>user</th><th>host</th><th>src → dst</th><th>detail</th></tr></thead><tbody></tbody></table>
+      <h3>Reachability &amp; containment</h3>
+      <div id="reach" class="small"></div>
+      <div class="sim">
+        <label>Simulate <code>disable_account</code>: <select id="sim-target"></select></label>
+        <button id="sim-btn" type="button">Simulate</button>
+      </div>
+      <div id="sim-out" class="panel small"></div>
+      <h3>Uncertainty</h3>
+      <ul id="uncertainty" class="small"></ul>
+    </div>
+  </section>
+</main>
+<div id="drawer" hidden>
+  <div class="drawer-head"><strong>Raw evidence</strong> <span id="ev-badge"></span> <button id="ev-close" type="button">close</button></div>
+  <div id="ev-meta" class="small"></div>
+  <pre id="ev-raw"></pre>
+</div>
+</body>
+</html>
