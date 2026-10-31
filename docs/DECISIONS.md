@@ -17,3 +17,11 @@
 - D-14 Canonical user = lower-case bare account (domain stripped into `user_domain`) so `user` and `target_user` compare directly; dossier §11 suggests `domain\user`, but the dev data is single-domain.
 - D-15 Ingest is single-process streaming (readline, 200k-row Parquet batches, zstd, 128k row groups); byte-range workers deferred to Phase 2.
 - D-16 FortiGate key=value parser included in field_map/parsers so firex lines normalise, but full-tier runs are Phase 2.
+- D-17 `ts` is stored as naive TIMESTAMP(us) holding UTC (tz-aware results would require pytz, which is outside the approved stack).
+- D-18 Rule types: match, threshold (+followed_by), and a minimal `baseline` (first_seen after warm-up, dossier §12 table) needed for R008; `sequence` deferred.
+- D-19 Added R010 (T1204.002, Office app followed by a script interpreter it spawned) beyond the brief's list so the A2 "winword.exe" step is detectable; R010 number was unused.
+- D-20 Thresholds: R001 ≥20 fails/10 min per src_ip; R001c ≥5 fails/30 min per (src_ip,user) followed by success ≤30 min; R009 ≥10 conns/2 h per (host,dst_ip), bytes_out ≤2048, dst_ip contacted by ≤1 host; R011 bytes_out ≥100 MiB external; R008 warm-up 6 h.
+- D-21 label_priority (lower wins): R002 15, R001 20, R001c 25, R003/R005/R009/R011 30, R010 35, R006/R007 40, R008 50, R004 90.
+- D-22 Duplicate suppression (§12 step 1) at detection level: a detection whose members are a subset of a stronger same-technique detection gets duplicate_of and is excluded from correlation (R001 ⊂ R001c on A1).
+- D-23 followed_by semantics: follower must occur within `within` after ≥count window members; members = those members + follower.
+- D-24 Technique table is a hand-curated ATT&CK subset in config/attack.yml (STIX build script deferred); rule load rejects unknown techniques and invalid technique/tactic pairs.

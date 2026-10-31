@@ -228,8 +228,7 @@ class Gen:
         r, gt = self.rng, []
         # ---------------- A1: brute force -> valid account -> new user -> admin group -> lateral -> exfil
         attacker = f"185.{r.randint(100, 199)}.{r.randint(1, 254)}.{r.randint(1, 254)}"
-        u1 = "pshah"  # FIN user: has no RDS baseline, no prior FILE-01 interactive admin use
-        self.server_access_note = None
+        u1 = "jdsouza"  # ENG user: no RDS and no FILE-01 baseline access
         entry, fileserver = "SRV-RDS-01", "SRV-FILE-01"
         t = self.start + timedelta(days=1, hours=2, minutes=r.randint(0, 20))
         steps = []
@@ -436,7 +435,7 @@ def write_assets(path: Path, g: Gen) -> None:
         },
         "memberships": [
             {"account": IT_ADMIN, "group": "Domain Admins"},
-            {"account": "pshah", "group": "FileServer-Admins"},
+            {"account": "jdsouza", "group": "FileServer-Admins"},
             {"account": "dnair", "group": "FileServer-Admins"},
             {"account": "hsingh", "group": "DB-Admins"},
             {"account": "mkhan", "group": "DB-Admins"},

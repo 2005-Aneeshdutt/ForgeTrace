@@ -24,7 +24,7 @@ OFFSET_MASK = (1 << 48) - 1
 SCHEMA = pa.schema([
     ("event_id", pa.int64()), ("file_id", pa.int16()), ("byte_offset", pa.int64()), ("line_no", pa.int64()),
     ("line_digest", pa.string()), ("source_event_id", pa.string()),
-    ("ts", pa.timestamp("us", tz="UTC")), ("source_type", pa.string()), ("raw_format", pa.string()),
+    ("ts", pa.timestamp("us")), ("source_type", pa.string()), ("raw_format", pa.string()),
     ("event_type", pa.string()), ("action", pa.string()), ("outcome", pa.string()),
     ("user", pa.string()), ("user_domain", pa.string()), ("target_user", pa.string()),
     ("host", pa.string()), ("host_ip", pa.string()),

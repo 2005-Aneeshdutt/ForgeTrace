@@ -1,0 +1,37 @@
+# Curated ATT&CK technique table (dossier §13 attack_techniques). Built by hand for Phase 1
+# from ATT&CK Enterprise v18 names/tactics; a pinned STIX build script is Phase 2.
+# Rule load fails if a rule's technique is missing here, deprecated/revoked, or its tactic
+# is not one of the technique's tactics.
+attack_version: "enterprise-v18 (hand-curated subset)"
+
+tactics:            # ATT&CK enterprise tactic order -> ordinal; kill_chain_phase = Lockheed Martin
+  Reconnaissance:        {ordinal: 1,  kill_chain_phase: Reconnaissance}
+  Resource Development:  {ordinal: 2,  kill_chain_phase: Weaponization}
+  Initial Access:        {ordinal: 3,  kill_chain_phase: Delivery}
+  Execution:             {ordinal: 4,  kill_chain_phase: Exploitation}
+  Persistence:           {ordinal: 5,  kill_chain_phase: Installation}
+  Privilege Escalation:  {ordinal: 6,  kill_chain_phase: Exploitation}
+  Defense Evasion:       {ordinal: 7,  kill_chain_phase: Installation}
+  Credential Access:     {ordinal: 8,  kill_chain_phase: Exploitation}
+  Discovery:             {ordinal: 9,  kill_chain_phase: Actions on Objectives}
+  Lateral Movement:      {ordinal: 10, kill_chain_phase: Actions on Objectives}
+  Collection:            {ordinal: 11, kill_chain_phase: Actions on Objectives}
+  Command and Control:   {ordinal: 12, kill_chain_phase: Command and Control}
+  Exfiltration:          {ordinal: 13, kill_chain_phase: Actions on Objectives}
+  Impact:                {ordinal: 14, kill_chain_phase: Actions on Objectives}
+
+techniques:
+  T1110:     {name: Brute Force, tactics: [Credential Access]}
+  T1110.001: {name: Password Guessing, parent: T1110, tactics: [Credential Access]}
+  T1078:     {name: Valid Accounts, tactics: [Defense Evasion, Persistence, Privilege Escalation, Initial Access]}
+  T1059.001: {name: PowerShell, parent: T1059, tactics: [Execution]}
+  T1027:     {name: Obfuscated Files or Information, tactics: [Defense Evasion]}
+  T1547.001: {name: Registry Run Keys / Startup Folder, parent: T1547, tactics: [Persistence, Privilege Escalation]}
+  T1136.001: {name: Local Account, parent: T1136, tactics: [Persistence]}
+  T1098:     {name: Account Manipulation, tactics: [Persistence, Privilege Escalation]}
+  T1021:     {name: Remote Services, tactics: [Lateral Movement]}
+  T1021.001: {name: Remote Desktop Protocol, parent: T1021, tactics: [Lateral Movement]}
+  T1021.002: {name: SMB/Windows Admin Shares, parent: T1021, tactics: [Lateral Movement]}
+  T1071.001: {name: Web Protocols, parent: T1071, tactics: [Command and Control]}
+  T1041:     {name: Exfiltration Over C2 Channel, tactics: [Exfiltration]}
+  T1204.002: {name: Malicious File, parent: T1204, tactics: [Execution]}

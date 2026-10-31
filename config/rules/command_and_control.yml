@@ -1,0 +1,19 @@
+- id: R009
+  version: 1
+  title: Low-byte periodic connections to a rare external destination (beaconing)
+  author: forgetrace
+  technique: T1071.001
+  tactic: Command and Control
+  severity: 3
+  confidence: 0.7   # 10+ small sessions to an address no other host contacts is unusual for browsing
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: dst_is_external, op: eq, value: true}
+      - {field: bytes_out, op: lte, value: 2048}
+      - {field: dst_ip, op: rare, by: host, max_distinct: 1}
+  group_by: [host, dst_ip]
+  threshold: {count: 10, window: 2h}
+  aggregate_by: [host, dst_ip]

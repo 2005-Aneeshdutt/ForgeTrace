@@ -1,0 +1,16 @@
+- id: R011
+  version: 1
+  title: Large outbound transfer to an external address
+  author: forgetrace
+  technique: T1041
+  tactic: Exfiltration
+  severity: 4
+  confidence: 0.5   # backups also send large volumes; correlation decides whether it is part of an attack
+  label_priority: 30
+  type: match
+  filter:
+    all:
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: dst_is_external, op: eq, value: true}
+      - {field: bytes_out, op: gte, value: 104857600}
+  aggregate_by: [host, dst_ip]

@@ -1,0 +1,15 @@
+- id: R007
+  version: 1
+  title: Account added to a privileged group
+  author: forgetrace
+  technique: T1098
+  tactic: Privilege Escalation
+  severity: 3
+  confidence: 0.7   # privileged-group adds are rare and high impact; normal department groups excluded
+  label_priority: 40
+  type: match
+  filter:
+    all:
+      - {field: event_type, op: eq, value: group_add}
+      - {field: group_name, op: in, value: [administrators, domain admins, enterprise admins, backup operators, schema admins], ci: true}
+  aggregate_by: [user, host]

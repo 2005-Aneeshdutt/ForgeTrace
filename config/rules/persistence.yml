@@ -1,0 +1,32 @@
+- id: R005
+  version: 1
+  title: Run-key persistence written by a non-allow-listed process
+  author: forgetrace
+  technique: T1547.001
+  tactic: Persistence
+  severity: 3
+  confidence: 0.7   # updaters (OneDrive/Teams) are allow-listed; anything else writing Run keys is suspicious
+  label_priority: 30
+  type: match
+  filter:
+    all:
+      - {field: event_type, op: eq, value: registry_set}
+      - {field: registry_path, op: contains, value: "\\currentversion\\run", ci: true}
+      - not:
+          {field: process, op: in, value: [onedrive.exe, teams.exe, securityhealthsystray.exe], ci: true}
+  aggregate_by: [host, user]
+
+- id: R006
+  version: 1
+  title: Local account created
+  author: forgetrace
+  technique: T1136.001
+  tactic: Persistence
+  severity: 2
+  confidence: 0.5   # account creation is routine IT work; only meaningful when linked to other stages
+  label_priority: 40
+  type: match
+  filter:
+    all:
+      - {field: event_type, op: eq, value: account_create}
+  aggregate_by: [user, host]

@@ -1,0 +1,18 @@
+- id: R008
+  version: 1
+  title: First-seen user-to-host remote logon after warm-up
+  author: forgetrace
+  technique: T1021
+  tactic: Lateral Movement
+  severity: 2
+  confidence: 0.5   # new pairs also come from legitimate new access; strength comes from correlation
+  label_priority: 50
+  type: baseline
+  filter:
+    all:
+      - {field: event_type, op: eq, value: auth_success}
+      - {field: logon_type, op: in, value: [network, remoteinteractive], ci: true}
+      - {field: user, op: not_null}
+      - {field: host, op: not_null}
+  first_seen: {keys: [user, host], warmup: 6h}
+  aggregate_by: [user, host]

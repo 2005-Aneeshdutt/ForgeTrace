@@ -103,7 +103,7 @@ groups:
 memberships:
 - account: adm.rsharma
   group: Domain Admins
-- account: pshah
+- account: jdsouza
   group: FileServer-Admins
 - account: dnair
   group: FileServer-Admins

@@ -1,0 +1,64 @@
+- id: R003
+  version: 1
+  title: PowerShell with stealth / download / encoded-command switches
+  author: forgetrace
+  technique: T1059.001
+  tactic: Execution
+  severity: 3
+  confidence: 0.7   # -nop/-w hidden/-enc are uncommon in admin scripts; benign scripts use -File
+  label_priority: 30
+  type: match
+  filter:
+    all:
+      - {field: event_type, op: eq, value: proc_start}
+      - {field: process, op: in, value: [powershell.exe, pwsh.exe], ci: true}
+      - any:
+          - {field: command_line, op: contains, value: " -nop", ci: true}
+          - {field: command_line, op: contains, value: " -noprofile", ci: true}
+          - {field: command_line, op: contains, value: " -w hidden", ci: true}
+          - {field: command_line, op: contains, value: " -windowstyle hidden", ci: true}
+          - {field: command_line, op: contains, value: " -enc", ci: true}
+          - {field: command_line, op: contains, value: "downloadstring", ci: true}
+  aggregate_by: [host, user]
+
+- id: R004
+  version: 1
+  title: Encoded command line (obfuscation)
+  author: forgetrace
+  technique: T1027
+  tactic: Defense Evasion
+  severity: 2
+  confidence: 0.5   # base64 arguments also appear in some management tooling; low priority label
+  label_priority: 90
+  type: match
+  filter:
+    all:
+      - {field: event_type, op: eq, value: proc_start}
+      - {field: command_line, op: regex, value: "(?i)\\s-(e|en|enc|enco|encod|encodedcommand)\\s+[A-Za-z0-9+/=]{20,}"}
+  aggregate_by: [host, user]
+
+- id: R010
+  version: 1
+  title: Office application followed by a script interpreter it spawned (user execution of malicious file)
+  author: forgetrace
+  technique: T1204.002
+  tactic: Execution
+  severity: 3
+  confidence: 0.7   # Office spawning PowerShell/cmd/wscript is rare in normal use
+  label_priority: 35
+  type: threshold
+  filter:
+    all:
+      - {field: event_type, op: eq, value: proc_start}
+      - {field: process, op: in, value: [winword.exe, excel.exe, powerpnt.exe, outlook.exe], ci: true}
+  group_by: [host, user]
+  threshold: {count: 1, window: 10m}
+  followed_by:
+    filter:
+      all:
+        - {field: event_type, op: eq, value: proc_start}
+        - {field: parent_process, op: in, value: [winword.exe, excel.exe, powerpnt.exe, outlook.exe], ci: true}
+        - {field: process, op: in, value: [powershell.exe, pwsh.exe, cmd.exe, wscript.exe, cscript.exe, mshta.exe], ci: true}
+    join_on: [host, user]
+    within: 10m
+  aggregate_by: [host, user]

@@ -1,0 +1,15 @@
+- id: R002
+  version: 1
+  title: Successful logon from an external address (valid account abuse)
+  author: forgetrace
+  technique: T1078
+  tactic: Initial Access
+  severity: 3
+  confidence: 0.7   # external interactive/network logons are rare for internal-only services
+  label_priority: 15
+  type: match
+  filter:
+    all:
+      - {field: event_type, op: eq, value: auth_success}
+      - {field: src_is_external, op: eq, value: true}
+  aggregate_by: [user, host]
