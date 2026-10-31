@@ -156,7 +156,7 @@ def norm_host(v) -> str | None:
 
 def parse_ts(raw: dict, spec: dict) -> int:
     """Return UTC epoch microseconds."""
-    v = raw.get(spec["field"])
+    v = raw.get(spec["field"]) if spec.get("field") else None
     kind = spec["kind"]
     try:
         if v not in (None, ""):

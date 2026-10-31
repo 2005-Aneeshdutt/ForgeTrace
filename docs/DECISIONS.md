@@ -39,3 +39,6 @@
 - D-36 API: brief's `/incidents/{id}/reach` plus dossier alias `/reachability`; `/alerts?unlinked=true` and `/rules` included; `/report` and `/metrics` deferred. Strict CSP (script/style 'self'); all log-derived strings rendered with textContent; Cytoscape canvas labels are not HTML.
 - D-37 event_id values stay below 2^53 for file_id < 32, so they are exact as JavaScript numbers in the dashboard.
 - D-38 Scoring: step found = any detection (incl. duplicates/folded) whose members intersect the step's lines; predicted label = the step events' primary technique; path order evaluated on the primary path with the dossier DP chain reported as a secondary line; runtime/peak RSS read from run_stats.json (ru_maxrss of the single run process).
+- D-39 FortiGate timestamp = `date`+`time`+`tz` (explicit offset); `eventtime` in firex encodes local wall-clock as if UTC (e.g. 08:48:26 for tz +0530), verified on the first line.
+- D-40 followed_by gained an optional `link` (follower field == window field), used by R010 for the process-tree link (follower parent_process == Office process); found when running on edr_events.json, where unlinked Office launches inflated R010 members.
+- D-41 Edge evidence IDs are computed only for kept edges (correlation on edr_events.json went from 7.1 s to 0.2 s).

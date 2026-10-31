@@ -49,6 +49,7 @@ class FollowedBy(BaseModel):
     filter: dict
     join_on: list[str]
     within: str
+    link: dict[str, str] = {}   # follower field -> window-event field that must be equal (case-insensitive)
 
 
 class FirstSeen(BaseModel):
@@ -117,7 +118,7 @@ def referenced_fields(rule: Rule) -> set[str]:
     _walk_fields(rule.filter, out)
     if rule.followed_by:
         _walk_fields(rule.followed_by.filter, out)
-        out |= set(rule.followed_by.join_on)
+        out |= set(rule.followed_by.join_on) | set(rule.followed_by.link) | set(rule.followed_by.link.values())
     if rule.first_seen:
         out |= set(rule.first_seen.keys)
     return out
@@ -201,14 +202,16 @@ def compile_rule(rule: Rule) -> dict[str, str]:
     sql = {"filter": f"SELECT event_id, ts, {', '.join(_q(rule))} FROM events WHERE {where}"}
     if rule.type == "threshold":
         keys = ", ".join(f'"{k}"' for k in rule.group_by)
+        wl = "".join(f', lower("{v}") AS "_w_{v}"' for v in (rule.followed_by.link.values() if rule.followed_by else []))
         sql["threshold"] = (
-            f"SELECT event_id, ts, {keys}, count(*) OVER (PARTITION BY {keys} ORDER BY ts "
+            f"SELECT event_id, ts, {keys}{wl}, count(*) OVER (PARTITION BY {keys} ORDER BY ts "
             f"RANGE BETWEEN INTERVAL {rule.threshold.seconds} SECOND PRECEDING AND CURRENT ROW) AS win_count "
             f"FROM events WHERE {where} AND " + " AND ".join(f'"{k}" IS NOT NULL' for k in rule.group_by)
             + f" ORDER BY {keys}, ts, event_id")
         if rule.followed_by:
             fb = rule.followed_by
-            sql["followed_by"] = (f"SELECT event_id, ts, {', '.join(chr(34) + k + chr(34) for k in fb.join_on)} "
+            fl = "".join(f', lower("{k}")' for k in fb.link)
+            sql["followed_by"] = (f"SELECT event_id, ts, {', '.join(chr(34) + k + chr(34) for k in fb.join_on)}{fl} "
                                   f"FROM events WHERE {compile_filter(fb.filter)} ORDER BY ts, event_id")
     if rule.type == "baseline":
         keys = ", ".join(f'"{k}"' for k in rule.first_seen.keys)
@@ -243,14 +246,18 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
         n, W = rule.threshold.count, rule.threshold.seconds
         nk = len(rule.group_by)
         # Merge every qualifying window per key into maximal detections (members never dropped).
+        nl = len(rule.followed_by.link) if rule.followed_by else 0
         by_key: dict[tuple, list] = {}
+        wlink: dict[int, tuple] = {}
         for eid, ts, *rest in rows:
-            by_key.setdefault(tuple(rest[:nk]), []).append((ts, eid, rest[nk]))
+            by_key.setdefault(tuple(rest[:nk]), []).append((ts, eid, rest[nk + nl]))
+            wlink[eid] = tuple(rest[nk:nk + nl])
         followers = None
         if rule.followed_by:
             followers = {}
+            nj = len(rule.followed_by.join_on)
             for eid, ts, *kv in con.execute(sql["followed_by"]).fetchall():
-                followers.setdefault(tuple(kv), []).append((ts, eid))
+                followers.setdefault(tuple(kv[:nj]), []).append((ts, eid, tuple(kv[nj:])))
         for key in sorted(by_key, key=lambda k: tuple(str(x) for x in k)):
             evs = by_key[key]
             cur: list | None = None
@@ -281,10 +288,11 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
                     # Follower must come after a window member and within `within` of it; members are
                     # restricted to the window events preceding the follower inside that bound.
                     hit, pre = None, []
-                    for t, e in followers.get(jk, []):
+                    for t, e, flink in followers.get(jk, []):
                         if e in members:
                             continue
-                        pre = [(wt, we) for wt, we in win if 0 <= t.timestamp() - wt.timestamp() <= lim]
+                        pre = [(wt, we) for wt, we in win if 0 <= t.timestamp() - wt.timestamp() <= lim
+                               and (not nl or wlink[we] == flink)]
                         if len(pre) >= n:
                             hit = (t, e)
                             break
@@ -293,7 +301,8 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
                     members = [we for _, we in pre] + [hit[1]]
                     ts_first, ts_last = pre[0][0], hit[0]
                     ev = (f"count={len(pre)} >= {n} within {fb.within} before follower for {keydesc}; "
-                          f"followed by matching event {hit[1]} on {', '.join(fb.join_on)}")
+                          f"followed by matching event {hit[1]} on {', '.join(fb.join_on)}"
+                          + "".join(f"; follower.{k} == window.{v}" for k, v in fb.link.items()))
                     dets.append({"members": members, "ts_first": ts_first, "ts_last": ts_last, "evidence": ev,
                                  "aggregate_key": keydesc})
                     continue

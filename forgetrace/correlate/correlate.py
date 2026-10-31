@@ -221,7 +221,6 @@ def candidate_edges(groups: list[dict], ipmap: dict, deg: dict, con: duckdb.Duck
                       "score": sc["score"], "score_terms": sc["terms"], "weighted_terms": sc["weighted"],
                       "tau_s": sc["tau_s"], "delta_t_s": round(dt, 3), "kind": "inferred",
                       "connector_event_id": None})
-    _evidence_ids(edges, gid, con)
     return edges
 
 
@@ -383,6 +382,7 @@ def correlate(con: duckdb.DuckDBPyConnection) -> dict:
     ipmap = ip_host_map(con)
     cand = candidate_edges(groups, ipmap, deg, con)
     kept = prune(cand)
+    _evidence_ids(kept, {g["group_id"]: g for g in groups}, con)  # evidence only for kept edges
     incidents, abstained = build_incidents(groups, kept)
     return {"groups": groups, "candidate_edges": cand, "edges": kept, "incidents": incidents,
             "abstained": abstained, "entity_degree": deg}

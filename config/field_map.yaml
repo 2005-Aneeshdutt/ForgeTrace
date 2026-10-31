@@ -76,7 +76,9 @@ formats:
 
   fortigate_kv:        # firex-*.log (FortiGate key=value). Not used by the dev sample.
     source_type: firewall
-    timestamp: {field: eventtime, kind: epoch_auto, fallback: [date, time, tz]}
+    # eventtime in firex encodes local wall-clock as if UTC (08:48 with tz=+0530), so the explicit
+    # date + time + tz triple is canonical (docs/DECISIONS.md D-39); sub-second order falls back to byte offset.
+    timestamp: {kind: date_time_tz, fallback: [date, time, tz]}
     fields:
       action: [action]
       outcome: [status]

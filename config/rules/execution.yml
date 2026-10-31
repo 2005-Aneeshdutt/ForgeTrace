@@ -61,4 +61,5 @@
         - {field: process, op: in, value: [powershell.exe, pwsh.exe, cmd.exe, wscript.exe, cscript.exe, mshta.exe], ci: true}
     join_on: [host, user]
     within: 10m
+    link: {parent_process: process}   # process-tree link: follower's parent is the Office process
   aggregate_by: [host, user]
