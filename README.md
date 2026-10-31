@@ -1,6 +1,6 @@
 # ForgeTrace
 
-ForgeTrace is a local, deterministic, offline investigation engine. It streams security logs (any format: JSON, CEF, syslog, key=value, CSV) into Parquet, runs YAML detection rules in DuckDB, and labels each detection with an ATT&CK technique and tactic. It links detections into incidents using a transparent edge score, reconstructs the attack path, and estimates which critical assets are reachable next. In **live mode** it consumes logs as they arrive and keeps enriching a **Neo4j knowledge graph**, so an event arriving now is linked to related activity seen days ago. Every alert, incident and campaign comes with a **human-verifiable explanation**: the rule's condition in plain English, the observed numbers, the exact raw log lines (SHA-256 re-verified), and how to check it by hand. An optional, clearly labelled AI summary can restate those facts; detection never uses an LLM.
+ForgeTrace is a local, deterministic, offline investigation engine. It streams security logs (any format: JSON, CEF, syslog, key=value, CSV) into Parquet, runs YAML detection rules in DuckDB, and labels each detection with an ATT&CK technique and tactic. It links detections into incidents using a transparent edge score, reconstructs the attack path, and estimates which critical assets are reachable next. In **live mode** it consumes logs as they arrive and keeps enriching a **Neo4j knowledge graph**, so an event arriving now is linked to related activity seen days ago. Every alert, incident and campaign comes with a **human-verifiable explanation**: the rule's condition in plain English, the observed numbers, the exact raw log lines (SHA-256 re-verified), and how to check it by hand. Detection combines YAML rules with two unsupervised, explainable ML models (a per-entity behaviour model and a graph link model for lateral movement) that corroborate the rules. An optional, clearly labelled AI summary can restate those facts; detection never uses an LLM.
 
 ## Live mode, knowledge graph and explanations (Phase 2)
 
@@ -22,17 +22,105 @@ Batch analysis (`forgetrace run`, `forgetrace analyse`, `forgetrace stream`) sti
 
 The architectural authority is `ForgeTrace — Research & Implementation Dossier-2.pdf` (§10–14). Deviations and every threshold are recorded one per line in [docs/DECISIONS.md](docs/DECISIONS.md). Progress, open risks and deferred work are in [WORKLOG.md](WORKLOG.md).
 
-## Quick start
+## How to run
+
+### 1. Prerequisites and setup (once)
+
+- macOS or Linux with **Python 3.11**.
+- **Docker** is optional. You need it only for the Neo4j knowledge graph (`--graph` and the Knowledge graph page). Everything else runs without it.
 
 ```bash
-make setup     # python3.11 venv + pinned requirements.txt
-make sample    # deterministic dev data: data/sample/events.log, ground_truth.json, config/assets.yaml
-make run       # analyse the sample -> workspace out/sample
-make analyze   # analyse every log file in data/input/ -> workspace out/input
-make score     # compare the sample workspace with ground truth (only the scorer reads ground truth)
-make demo      # analyse the 5-event demo file -> workspace out/demo (dashboard: Pipeline demo)
-make test      # pytest (57 tests)
-make serve     # http://127.0.0.1:8000 — dashboard + API (works offline; Cytoscape is vendored)
+make setup        # creates .venv and installs the pinned requirements.txt (DuckDB, FastAPI, scikit-learn, shap, neo4j, ...)
+make graph-up     # optional: Neo4j 2025.09 Community on localhost:7474 / 7687 (user neo4j, password forgetrace-dev)
+make check        # optional: lint + full test suite (162 tests)
+```
+
+If you change `NEO4J_PASSWORD` for Docker, export the same value before running ForgeTrace. If Docker Desktop is short of memory, 4 GB is enough for Neo4j (heap 2 GB + page cache 1 GB).
+
+### 2. Try it on the dev sample (about 1 minute)
+
+```bash
+make sample       # deterministic synthetic logs with planted attacks A1, A2 and decoy D1
+make run          # analyse -> workspace out/sample   (add GRAPH=1 to also load Neo4j)
+make score        # compare with the sample's ground truth (only the scorer reads it)
+make serve        # http://127.0.0.1:8000
+```
+
+### 3. Analyse your own logs (batch)
+
+Put the files in `data/input/`. The folder is treated as read-only evidence and is git-ignored. Then run one of:
+
+```bash
+make analyze                                   # every log file in data/input/ -> workspace out/input
+.venv/bin/python -m forgetrace run --input <files or folders> --out out/<name> [--graph]
+```
+
+Formats are detected per line (JSON, CEF, syslog, key=value, CSV with a header), so there is no format flag. Large files are ingested in parallel across CPU cores; set `FORGETRACE_WORKERS=<n>` to change the worker count. The provided firex-50G (62M events) takes about 22 minutes on an M2 Pro.
+
+### 4. Real-time analysis (live mode)
+
+Live mode follows files and folders. New files and appended lines are processed in micro-batches, and each batch is linked to everything seen before:
+
+```bash
+make live GRAPH=1 RESET=1                      # watch data/input/ -> workspace out/live, fresh knowledge base, with Neo4j
+make live GRAPH=1                              # resume: keeps building on the existing knowledge base
+.venv/bin/python -m forgetrace live --watch <files/folders> --out out/<name> [--graph] [--reset] \
+    [--batch-mb 256] [--once] [--idle-exit 600]
+```
+
+- `--once` processes what is there now, then exits.
+- `--idle-exit N` stops after N seconds with no new data.
+- The ML models stay silent for the first `warmup_hours` (6 h of event time) while baselines form. After that they retrain as history grows.
+- Progress is printed per batch and written to `out/<name>/live_status.json`. The dashboard's Live page refreshes every 5 seconds.
+- Batch size, lookback, correlation window and the hot/cold retention tiers are set in `config/live.yml`.
+
+### 5. Dashboard, explanations and the optional AI summary
+
+```bash
+export OPENROUTER_API_KEY=...                  # optional: enables the "AI summary" button (never stored or committed)
+make serve                                     # http://127.0.0.1:8000
+```
+
+- **Overview / Incidents / Detections:** batch workspaces. Pick the workspace at the top.
+- **Live:** recent batches and alerts. Each alert has a `rule` or `model` badge and its fused probability. Click one to see why it was flagged.
+- **Knowledge graph:** incidents and campaigns as timelines, plus an entity explorer (needs Neo4j).
+- **Explanation panel:**
+  - the condition, or for a model flag its reasons against the entity's usual range
+  - the raw log lines, re-read and SHA-256 verified
+  - `sed`/`grep` commands to check by hand
+  - benign look-alikes to rule out
+
+  The same data is at `GET /explain/{alert,incident,campaign}/{id}` (`?llm=true` for the AI summary).
+
+### 6. A new, unseen dataset
+
+The workflow needs config only, no code changes:
+1. Drop the files into `data/input/` and run `make analyze` (or let live mode pick them up).
+2. Open `out/<workspace>/run_plan.json`. It lists:
+   - the formats seen and the fill rate of each field
+   - rules disabled because their fields are missing (blind spots)
+   - learned site values, such as home countries
+   - the features the ML models could use
+3. If fields are missing, add aliases, timestamp formats or message patterns in `config/field_aliases.yaml`. Set the time zone or home countries in `config/site.yaml` if you know them.
+4. Re-run. Lines that cannot be parsed are kept in `parse_errors` with their byte offset.
+
+### 7. Tuning
+
+| What | Where |
+|---|---|
+| Rules (filters, thresholds, sequences, first-seen) | `config/rules/*.yml` |
+| ML on/off, features, behaviour-model budget (`ueba.alerts_per_day`), link-model thresholds, live retraining | `config/ml.yml` |
+| Correlation weights, incident gate, risk bands | `config/correlation.yml` |
+| Graph connection and what gets loaded | `config/graph.yml` |
+| AI summary model and spend caps | `config/llm.yml` |
+
+Every threshold and the reason for it is in [docs/DECISIONS.md](docs/DECISIONS.md).
+
+### Command reference
+
+```bash
+make setup | sample | run [GRAPH=1] | analyze | live [GRAPH=1] [RESET=1] [WATCH=dir] | score | demo | serve | check | test
+make graph-up | graph-down | bench DATA=<file> | eval DS=<name> EXP=<name> | clean
 ```
 
 ## Where the input logs come from

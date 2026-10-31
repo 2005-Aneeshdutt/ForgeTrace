@@ -4,7 +4,7 @@ INPUT ?= $(DATA)
 OUT ?= out
 INPUT_DIR ?= data/input
 
-.PHONY: setup sample run analyze demo score eval bench check serve test clean graph-up graph-down
+.PHONY: setup sample run analyze live demo score eval bench check serve test clean graph-up graph-down
 
 setup:
 	python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -19,6 +19,11 @@ run:
 # Your own logs: every log file in data/input/ -> workspace out/input
 analyze:
 	$(PY) -m forgetrace run --input $(INPUT_DIR) --out $(OUT)/input
+
+# Live mode: follow a folder, enrich the knowledge base (+ Neo4j with GRAPH=1); RESET=1 starts fresh
+WATCH ?= data/input
+live:
+	$(PY) -m forgetrace live --watch $(WATCH) --out $(OUT)/live $(if $(GRAPH),--graph,) $(if $(RESET),--reset,)
 
 # 5-event walkthrough file -> workspace out/demo (shown on the dashboard's Demo page)
 demo:
