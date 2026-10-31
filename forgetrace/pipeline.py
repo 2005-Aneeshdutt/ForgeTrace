@@ -146,8 +146,13 @@ def analyse(con: duckdb.DuckDBPyConnection, out: Path, stages: dict, report, gra
     Shared by the batch run and the streaming mode (forgetrace/stream.py)."""
     t = time.perf_counter()
     report("detect", 0.82)
-    rules = load_rules()
+    from forgetrace.rules.router import plan as route
+
+    all_rules = load_rules()
+    rules, run_plan, cap = route(con, all_rules, dataset=out.name)
+    (out / "run_plan.json").write_text(json.dumps({**run_plan.model_dump(), "data": cap}, indent=1, default=str))
     det = detect(con, rules)
+    det["run_plan"] = {"enabled": len(run_plan.enabled), "disabled": len(run_plan.disabled)}
     stages["detect_s"] = round(time.perf_counter() - t, 3)
     t = time.perf_counter()
     report("correlate", 0.88)

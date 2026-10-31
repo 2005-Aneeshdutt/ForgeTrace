@@ -17,7 +17,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from forgetrace import config
-from forgetrace.ingest.parsers import ParseError, parse_line
+from forgetrace.ingest.parsers import ParseError, csv_header, parse_line
 
 OFFSET_MASK = (1 << 48) - 1
 
@@ -127,11 +127,18 @@ def _count_lines(job: tuple[str, int, int]) -> int:
     return n + (1 if last and last != b"\n" else 0)
 
 
+def file_csv_header(path: Path) -> tuple[list[str], str] | None:
+    """CSV files are recognised by a header row; every range of the file is parsed with it."""
+    with open(path, "rb") as f:
+        return csv_header(strip_eol(f.readline(65536)))
+
+
 def _ingest_range(job: dict) -> dict:
     """Parse one byte range into its own Parquet file (+ parse-error file). Runs in a worker process.
     Line numbers start at job['base_line'] + 1, so results are identical to a sequential pass."""
     file_id, start, end = job["file_id"], job["start"], job["end"]
     max_line, batch_rows, dataset = job["max_line"], job["batch_rows"], job["dataset"]
+    csv_ctx = tuple(job["csv"]) if job.get("csv") else None
     names = SCHEMA.names
     stats = {"lines": 0, "events": 0, "errors": 0, "empty": 0}
     buf: dict[str, list] = {n: [] for n in names}
@@ -170,9 +177,12 @@ def _ingest_range(job: dict) -> dict:
             if not content.strip():
                 stats["empty"] += 1
                 continue
+            if csv_ctx and lstart == 0:  # the CSV header row is not an event
+                stats["empty"] += 1
+                continue
             eid = make_event_id(file_id, lstart)
             try:
-                ev = parse_line(content)
+                ev = parse_line(content, csv_ctx)
             except ParseError as e:
                 _err(errs, file_id, lstart, line_no, str(e), content)
                 stats["errors"] += 1
@@ -243,8 +253,10 @@ def ingest(inputs: list[Path], out: Path, batch_rows: int = WORKER_BATCH_ROWS, p
     mapper = pool.map if pool else map
     counts = list(mapper(_count_lines, [(str(p), s, e) for _, p, s, e in ranges]))
     jobs, base = [], {}
+    headers = {fid: file_csv_header(p) for fid, p in enumerate(paths, start=1)}
     for i, ((file_id, path, s, e), c) in enumerate(zip(ranges, counts)):
         jobs.append({"range_index": i, "file_id": file_id, "path": str(path), "start": s, "end": e,
+                     "csv": headers.get(file_id),
                      "base_line": base.get(file_id, 0), "max_line": max_line, "batch_rows": batch_rows,
                      "dataset": dataset,
                      "events_path": str(ev_dir / f"part-{file_id:03d}-{i:05d}.parquet"),
@@ -316,8 +328,9 @@ def ingest_batch(path: Path, file_id: int, start: int, end: int, base_line: int,
     mapper = pool.map if pool else map
     counts = list(mapper(_count_lines, [(str(path), s, e) for s, e in sub]))
     jobs, base = [], base_line
+    hdr = file_csv_header(path)
     for i, ((s, e), c) in enumerate(zip(sub, counts)):
-        jobs.append({"range_index": i, "file_id": file_id, "path": str(path), "start": s, "end": e,
+        jobs.append({"range_index": i, "file_id": file_id, "path": str(path), "start": s, "end": e, "csv": hdr,
                      "base_line": base, "max_line": max_line, "batch_rows": WORKER_BATCH_ROWS, "dataset": dataset,
                      "events_path": str(ev_dir / f"part-{file_id:03d}-b{batch:04d}-{i:05d}.parquet"),
                      "errors_path": str(err_dir / f"part-{file_id:03d}-b{batch:04d}-{i:05d}.parquet")})

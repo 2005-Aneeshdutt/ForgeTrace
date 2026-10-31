@@ -3,7 +3,7 @@
 # app risk). Conditions use counts, distinct counts, byte sums, ports, URL/DNS shapes, login outcomes,
 # configuration messages, countries and the derived subnet / local-hour fields.
 # Every rule is scoped to source_type = firewall (this pack assumes FortiGate fields; DECISIONS D-69).
-# Country names below are a site policy (where the business operates), not entities.
+# Site facts (home countries, night hours) come from config/site.yaml via "@site.<key>"; nothing site-specific is written here.
 
 - id: F001
   version: 1
@@ -75,16 +75,16 @@
   technique: T1078.001
   tactic: Initial Access
   severity: 3
-  confidence: 0.7   # admin logins are rare (5 in firex-10G); night-time and foreign together is the anomaly
+  confidence: 0.7   # admin logins are rare; night-time and foreign together is the anomaly
   label_priority: 30
   type: match
   filter:
     all:
       - {field: source_type, op: eq, value: firewall}
       - {field: event_type, op: eq, value: auth_success}
-      - {field: local_hour, op: lte, value: 5}
+      - {field: local_hour, op: lte, value: "@site.night_hours.to"}
       - {field: src_country, op: not_null}
-      - not: {field: src_country, op: in, value: [India, Reserved]}
+      - not: {field: src_country, op: in, value: "@site.home_countries"}
   aggregate_by: [user]
 
 - id: F005

@@ -1,0 +1,89 @@
+# Generic field mapping for log formats that have no explicit profile in field_map.yaml
+# (docs/DECISIONS.md D-79). Used for unseen datasets: a source field maps to the first canonical
+# envelope field whose alias list contains it. Names are compared after normalisation: lower-case,
+# with '.', '_', '-', ' ' and '@' removed, so "Source.IP", "source_ip", "srcIp" and "SRCIP" are equal.
+# For flattened JSON the full dotted path is tried first, then its last segment.
+# Extend this file - not code - when a new dataset uses other names.
+
+timestamp: [timestamp, time, ts, datetime, eventtime, event_time, timecreated, timegenerated, utctime,
+            systemtime, logtime, log_time, _time, receivedtime, starttime, start_time, date_time, "@timestamp",
+            "event.created", eventdatetime, created, rt]
+# date + time (+ tz) split across fields (e.g. FortiGate date= time= tz=)
+date_fields: [date, logdate]
+time_fields: [time, logtime]
+tz_fields: [tz, timezone, utcoffset]
+
+fields:
+  source_event_id: [eventrecordid, recordid, recordnumber, eventuid, uid, id, eventid_uuid, externalid, logid_uuid]
+  action: [action, eventaction, act, activity, operation, operationname, method, eventtype, event_name, eventname,
+           category, task, logdesc]
+  outcome: [outcome, result, status, eventoutcome, success, resultcode, auditresult, keywords]
+  user: [user, username, user_name, targetusername, accountname, account, usr, suser, login, uname, subjectusername,
+         principal, userid, user_id, clientusername, srcuser, sourceuser]
+  user_domain: [domain, userdomain, targetdomainname, subjectdomainname, accountdomain, sntdom, realm]
+  target_user: [targetuser, duser, dstuser, newusername, memberusername, membername, samaccountname]
+  host: [host, hostname, computer, computername, workstationname, devicename, devname, device, dvchost, shost,
+         machinename, agentname, hostnamefqdn, node, server, servername, systemname]
+  host_ip: [hostip, deviceip, dvc, agentip, reporterip]
+  src_ip: [srcip, src, sourceip, sourceaddress, srcaddr, src_addr, clientip, client, ipaddress, remoteip,
+           remoteaddr, callerip, origip, idorigh, sip, saddr, srcipaddr]
+  dst_ip: [dstip, dst, destinationip, destinationaddress, dstaddr, dst_addr, destip, serverip, idresph, dip, daddr,
+           targetip, localip]
+  src_port: [srcport, spt, sourceport, sport, clientport, idorigp]
+  dst_port: [dstport, dpt, destinationport, dport, destport, serverport, idrespp, port]
+  protocol: [protocol, proto, transport, ipproto, networkprotocol]
+  process: [process, processname, image, exe, executable, app_process, procname, newprocessname, sproc, comm]
+  parent_process: [parentprocess, parentprocessname, parentimage, parent, ppname, creatorprocessname]
+  pid: [pid, processid, newprocessid]
+  command_line: [commandline, cmdline, cmd, processcommandline, command, args]
+  logon_id: [logonid, targetlogonid, sessionid_logon, subjectlogonid]
+  logon_type: [logontype, logon_type, authtype, authenticationtype, authmethod]
+  domain_name: [domainname, query, qname, dnsquery, hostname_requested, queryname, dns_question_name, fqdn, sni]
+  url: [url, uri, request, requesturi, path, urlpath, csuristem, requesturl, httpurl]
+  file_path: [filepath, filename, targetfilename, objectname, file, path_file]
+  file_hash: [hash, sha256, md5, sha1, filehash, hashes]
+  registry_path: [registrypath, targetobject, registrykey, keypath, objectname_registry]
+  registry_value: [registryvalue, details, valuedata, registrydata]
+  group_name: [groupname, targetgroupname, group, membergroup]
+  bytes_out: [bytesout, sentbyte, sentbytes, bytes_sent, sbytes, outbytes, origbytes, cs_bytes, srcbytes, bytestoserver]
+  bytes_in: [bytesin, rcvdbyte, rcvdbytes, bytes_received, rbytes, inbytes, respbytes, sc_bytes, dstbytes, bytestoclient]
+  vendor_event_code: [eventid, eventcode, event_id, logid, signatureid, msgid, messageid, ruleid_event, winlogeventid]
+  message: [message, msg, description, text, summary, detail, logmessage]
+  service: [service, servicename, app, application, appname]
+  src_country: [srccountry, sourcecountry, srcgeocountry, geoipcountry, clientcountry, country]
+  dst_country: [dstcountry, destinationcountry, dstgeocountry]
+
+# Never mapped even when present: vendor verdicts (owner decision, behaviour only).
+never_map: [threat, threatname, attack, attackid, virus, signature, severity, level, risk, riskscore, crscore,
+            catdesc, apprisk, alert, alertname, verdict, labels, rule, rulename]
+
+# source_type when no profile names one: first rule whose fields are all present wins.
+source_type_rules:
+  - {type: endpoint, any: [process, command_line, parent_process, registry_path, file_path]}
+  - {type: firewall, all: [src_ip, dst_ip], any: [dst_port, bytes_out, protocol, action]}
+  - {type: auth, all: [user], any: [logon_type, outcome]}
+  - {type: web, any: [url]}
+  - {type: dns, any: [domain_name]}
+  - {type: generic}
+
+# Outcome words -> canonical outcome
+outcome_words:
+  success: [success, succeeded, successful, ok, true, pass, passed, allowed, granted, "0x0", accepted]
+  failure: [failure, failed, fail, false, denied, invalid, error, rejected, unknown_user, bad_password, locked]
+
+# Free-text extraction for generic lines that carry a message (syslog, plain JSON "message" fields).
+# Each pattern's named groups become envelope fields; `set` adds fixed fields when it matches.
+# First matching pattern wins. Add patterns here for new text log families.
+message_patterns:
+  - regex: '(?P<outcome>Failed|Accepted) (?:password|publickey|keyboard-interactive/pam|none) for (?:invalid user )?(?P<user>\S+) from (?P<src_ip>[0-9a-fA-F:.]+)(?: port (?P<src_port>\d+))?'
+    set: {action: remote_login}
+  - regex: 'Invalid user (?P<user>\S+) from (?P<src_ip>[0-9a-fA-F:.]+)'
+    set: {action: remote_login, outcome: failure}
+  - regex: 'authentication failure;.*rhost=(?P<src_ip>[0-9a-fA-F:.]+)(?:\s+user=(?P<user>\S+))?'
+    set: {action: remote_login, outcome: failure}
+  - regex: 'sudo:\s+(?P<user>\S+) : .*COMMAND=(?P<command_line>.+)$'
+    set: {action: privileged_command}
+  - regex: 'new (?:user|group): name=(?P<target_user>[^,\s]+)'
+    set: {action: account_created}
+  - regex: '(?:SRC|src)=(?P<src_ip>[0-9a-fA-F:.]+).*(?:DST|dst)=(?P<dst_ip>[0-9a-fA-F:.]+)'
+    set: {}

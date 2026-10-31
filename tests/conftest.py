@@ -43,17 +43,25 @@ def ecs(t, host="WS-A-01", user="alice", **kw):
     return json.dumps(ev)
 
 
+TEST_SITE = {"home_countries": ["India", "Reserved"], "night_hours": {"from": 0, "to": 5}}
+
+
 def run_rules(tmp_path, lines, rule_ids):
     from forgetrace import store
     from forgetrace.ingest.ingest import ingest
     from forgetrace.rules.engine import detect, load_rules
+    from forgetrace.rules.router import _resolve
     f = tmp_path / "fx.log"
     f.write_text("\n".join(lines) + "\n")
     out = tmp_path / "out"
     ingest([f], out)
     con = store.connect(out)
     store.create_views(con, out)
-    detect(con, [r for r in load_rules() if r.id in rule_ids])
+    rules = []
+    for r in load_rules():  # fixtures pin site values; the router's data checks are tested separately
+        if r.id in rule_ids:
+            rules.append(r.model_copy(update={"filter": _resolve(r.filter, TEST_SITE, [])}))
+    detect(con, rules)
     rows = con.execute("SELECT rule_id, member_event_ids FROM detections").fetchall()
     con.close()
     return rows

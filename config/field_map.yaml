@@ -6,11 +6,12 @@
 internal_networks: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7"]
 max_line_bytes: 1048576
 command_line_max: 2048
-# Local wall-clock of the monitored site, used only for the derived local_hour field (firex: +05:30).
-local_utc_offset_minutes: 330
 
 formats:
-  ecs_json:            # SimEDR / edr_events.json shape (one JSON object per line)
+  # Named profiles are chosen by `match` (syntax + keys present), never by file name; any line no
+  # profile matches is mapped generically through config/field_aliases.yaml (DECISIONS D-79).
+  ecs_json:            # ECS-style endpoint JSON (one object per line)
+    match: {syntax: json, keys_all: ["@timestamp", "event.action"]}
     source_type: edr
     timestamp: {field: "@timestamp", kind: iso8601}
     fields:
@@ -45,6 +46,7 @@ formats:
       url: [url.full]
 
   cef:                 # ArcSight CEF; csN/cnN resolved through their *Label keys
+    match: {syntax: cef}
     source_type: edr_cef
     timestamp: {field: rt, kind: epoch_ms}
     label_fields:      # value of csNLabel / cnNLabel -> envelope field
@@ -76,7 +78,8 @@ formats:
       bytes_in: [in]
       url: [request]
 
-  fortigate_kv:        # firex-*.log (FortiGate key=value). Not used by the dev sample.
+  fortigate_kv:        # FortiGate key=value
+    match: {syntax: kv, keys_all: [date, time, logid, devname]}
     source_type: firewall
     # eventtime in firex encodes local wall-clock as if UTC (08:48 with tz=+0530), so the explicit
     # date + time + tz triple is canonical (docs/DECISIONS.md D-39); sub-second order falls back to byte offset.
@@ -125,3 +128,13 @@ event_types:
   - {when: {fw_subtype: [vpn], action: [tunnel-up]}, type: vpn_login}
   - {when: {fw_subtype: [ips]}, type: http_req}
   - {when: {fw_subtype: [system]}, type: config_change}
+  # Generic (unseen-format) lines only: vendor-neutral wording via '~regex' (DECISIONS D-79).
+  - {when: {raw_format: "~^generic_", action: "~log.?on|log.?in|sign.?in|auth|ssh|remote_login|session", outcome: [failure]}, type: auth_fail}
+  - {when: {raw_format: "~^generic_", action: "~log.?on|log.?in|sign.?in|auth|ssh|remote_login|session", outcome: [success]}, type: auth_success}
+  - {when: {raw_format: "~^generic_", action: "~account_created|user.?add|create.?user|useradd"}, type: account_create}
+  - {when: {raw_format: "~^generic_", action: "~privileged_command|sudo"}, type: proc_start}
+  - {when: {raw_format: "~^generic_", command_line: "~."}, type: proc_start}
+  - {when: {raw_format: "~^generic_", process: "~.", parent_process: "~."}, type: proc_start}
+  - {when: {raw_format: "~^generic_", url: "~."}, type: http_req}
+  - {when: {raw_format: "~^generic_", domain_name: "~.", dst_port: ["53"]}, type: dns_query}
+  - {when: {raw_format: "~^generic_", src_ip: "~.", dst_ip: "~."}, type: net_conn}

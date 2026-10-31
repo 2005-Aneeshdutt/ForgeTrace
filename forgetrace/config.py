@@ -23,6 +23,16 @@ def field_map() -> dict:
 
 
 @lru_cache(maxsize=None)
+def field_aliases() -> dict:
+    return load_yaml(CONFIG_DIR / "field_aliases.yaml")
+
+
+@lru_cache(maxsize=None)
+def site() -> dict:
+    return load_yaml(CONFIG_DIR / "site.yaml")
+
+
+@lru_cache(maxsize=None)
 def correlation() -> dict:
     return load_yaml(CONFIG_DIR / "correlation.yml")
 

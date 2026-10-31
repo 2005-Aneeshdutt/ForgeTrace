@@ -14,7 +14,7 @@ T0 = datetime(2026, 10, 24, 14, 0, 0, tzinfo=IST)  # 14:00 local
 
 def fgt(t: float, **kv) -> str:
     ts = T0 + timedelta(seconds=t)
-    parts = [f"date={ts:%Y-%m-%d}", f"time={ts:%H:%M:%S}", 'tz="+0530"', 'devname="FGT-TEST"']
+    parts = [f"date={ts:%Y-%m-%d}", f"time={ts:%H:%M:%S}", 'tz="+0530"', 'devname="FGT-TEST"', 'logid="0000000013"']
     for k, v in kv.items():
         parts.append(f"{k}={v}" if isinstance(v, int) else f'{k}="{v}"')
     return " ".join(parts)

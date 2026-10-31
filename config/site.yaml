@@ -1,0 +1,19 @@
+# Site policy: facts about the monitored organisation, not about any dataset (DECISIONS D-80).
+# Rules refer to these values as "@site.<key>"; a rule whose referenced value is empty is disabled by the
+# router and reported as a blind spot instead of guessing. Change this file for a new site/dataset.
+
+# Countries the organisation normally operates from (as written in the logs' country fields).
+# "auto" = learned from the data: the countries that together account for home_countries_share of
+# successful logins (plus private-address placeholders). A list pins them; [] disables rules that need it.
+home_countries: auto
+home_countries_share: 0.8
+
+# Local wall-clock offset from UTC, used when a log line carries no zone of its own (minutes).
+# Lines with an explicit zone (ISO offset, tz= field) always use their own offset.
+utc_offset_minutes: 0
+
+# Night hours (local) for "small hours" rules, inclusive.
+night_hours: {from: 0, to: 5}
+
+# Year assumed for timestamps that carry none (classic syslog "Oct 23 08:48:26"); null = file's mtime year.
+default_year: null
