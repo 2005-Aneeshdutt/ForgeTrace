@@ -76,6 +76,20 @@ From line 3,848,244 onward (69.0% of firex-10G) every event has `eventtime=17933
 
 Accuracy of these outputs is measured on firex-30G (labelled); firex-10G is the development set.
 
-## 6. firex-50G
+## 6. Provided `firex-50G.log` (`bench/firex-50G.analysis.json`)
 
-Run interrupted by the owner after ingest (488 ranges, 32.7 GB). To be re-run with progress reporting after the rule pack.
+32,702,905,053 bytes, 61,970,767 lines, 0 parse errors. Three full runs were needed to get through: the first two stopped in incident building / persistence because the timestamp clamp chains ~5,000 brute-force groups into one component (a 463 MB incident record, then 3.3 GB of edge-reason JSON; fixed by D-75–D-77). The final measurement re-analysed the ingested workspace with `forgetrace analyse`; the ingest time is from the immediately preceding run with the same ingest code.
+
+| Stage | Seconds | Notes |
+|---|---|---|
+| Ingest | 473 | 9 workers, 488 ranges, ≈ 66 MB/s |
+| Detect (29 rules) | 172.5 | slowest rules F016 24.7 s, F001 23.4 s, R001c 19.2 s |
+| Correlate | 462.0 | 5,088 groups, 1,143,670 candidate edges (all inside one window because of the clamp), 14,400 kept |
+| Reach + incident records + persist | 129.6 | 2 incidents; largest record 45 MB after bounding |
+| Graph load + campaigns | 55.7 | 5,088 alerts, 12,721 IPs; 4 campaigns, 3 spanning > 6 h |
+| **End to end** | **≈ 1,313 (21.9 min)** | PRD < 1 h: **pass** |
+| Peak memory (all processes) | **6.0 GB** | PRD < 8 GB: **pass**; above the 6 GB stretch target |
+
+All 17 FortiGate rules fired at least once. R001 produced 6,040 detections, nearly all from the clamped region (D-74). Accuracy: N/A for the same reason as §3 (no labels for this seed).
+
+Next scale targets: correlation (7.7 min, single-threaded candidate-edge building over clamp-sized groups) and memory headroom (the Neo4j Docker VM reserves 8 GB on a 16 GB machine; swap reached 17.5 GB during the failed runs).
