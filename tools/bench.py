@@ -83,7 +83,9 @@ def main() -> None:
         "stages": stages,
         "peak_rss_mb_psutil_1s": round(peak / 2**20, 1),
         "peak_rss_mb_ru_maxrss": round(stats["peak_rss_bytes"] / 2**20, 1),
-        "workers": 1, "parser": "phase1 readline + orjson/python per line",
+        "parallel": (json.loads((Path(a.out) / "files.json").read_text()).get("parallel")
+                     or {"workers": 1, "ranges": 1, "note": "sequential (pre-parallel ingest)"}),
+        "parser": "readline + orjson/python per line, byte-range process pool",
         "counts": {k: stats.get(k) for k in ("detections", "alert_groups", "candidate_edges", "kept_edges",
                                              "incidents", "abstained_components")},
         "rss_samples": samples,

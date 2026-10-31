@@ -15,11 +15,12 @@ from datetime import datetime
 from pathlib import Path
 
 import duckdb
+import pyarrow as pa
 
 from forgetrace import assets, config, store
 from forgetrace.correlate.correlate import correlate
 from forgetrace.ingest.ingest import ingest, split_event_id
-from forgetrace.reach.reach import candidate_actions, reachability
+from forgetrace.reach.reach import REACH_EVENTS_SQL, candidate_actions, context_graph, reachability
 from forgetrace.rules.engine import detect, load_rules, rules_summary
 
 
@@ -92,16 +93,21 @@ def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None
     stages["correlate_s"] = round(time.perf_counter() - t, 3)
     t = time.perf_counter()
     report("reach", 0.93)
+    # Reachability only reads successful logons and group additions; materialise them once so each
+    # incident's context graph scans a small table instead of every Parquet part (kept for the API).
+    con.execute(REACH_EVENTS_SQL)
     payloads = build_payloads(con, res)
     stages["reach_and_cache_s"] = round(time.perf_counter() - t, 3)
     persist(con, res, payloads, rules)
     con.close()
     (out / "incidents.json").write_text(dumps(payloads))
     stats = {"stages": stages, "wall_time_s": round(time.perf_counter() - t0, 3), "peak_rss_bytes": peak_rss_bytes(),
-             "peak_rss_note": "ru_maxrss of the single ForgeTrace process (all stages run in-process)",
+             "peak_rss_note": "ru_maxrss of the main process; parallel ingest workers are child processes "
+                             "(tools/bench.py samples the whole process tree)",
              "config_hash": config.config_hash(), "code_version": config.CODE_VERSION,
              "dataset": {"files": manifest["files"], "manifest_digest": manifest["manifest_digest"]},
-             "ingest": manifest["stats"], "detections": det["detections"], "rule_seconds": det["rule_seconds"],
+             "ingest": manifest["stats"], "ingest_parallel": manifest.get("parallel"),
+             "detections": det["detections"], "rule_seconds": det["rule_seconds"],
              "alert_groups": len(res["groups"]), "candidate_edges": len(res["candidate_edges"]),
              "kept_edges": len(res["edges"]), "incidents": len(payloads), "abstained_components": len(res["abstained"])}
     stats["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -116,8 +122,9 @@ def build_payloads(con: duckdb.DuckDBPyConnection, res: dict) -> list[dict]:
     eby = {e["edge_id"]: e for e in res["edges"]}
     payloads = []
     for inc in res["incidents"]:
-        reach = reachability(con, inc, gid)
-        cands = candidate_actions(con, inc, gid)
+        G, _ = context_graph(con, inc)  # built once per incident (Phase 1 built it twice)
+        reach = reachability(con, inc, gid, G=G)
+        cands = candidate_actions(con, inc, gid, G=G)
         nodes = []
         for v in inc["group_ids"]:
             g = dict(gid[v])
@@ -180,22 +187,31 @@ def timeline(con, mem: list[int], nodes: list[dict]) -> list[dict]:
         WHERE e.event_id IN (SELECT unnest(?)) ORDER BY e.ts, e.event_id""", [mem]).fetchall()
     cols = ["event_id", "ts", "line_no", "source_event_id", "raw_format", "event_type", "user", "target_user", "host",
             "src_ip", "dst_ip", "process", "command_line", "bytes_out", "primary_rule", "primary_technique", "also_matched"]
+    groups_of: dict[int, list[str]] = {}
+    for n in nodes:  # node order preserved, as the Phase 1 per-event scan did
+        for m in set(n["member_event_ids"]):
+            groups_of.setdefault(m, []).append(n["group_id"])
     out = []
     for r in rows:
         d = dict(zip(cols, r))
         d["display_id"] = display_id(d["event_id"])
-        d["group_ids"] = [n["group_id"] for n in nodes if d["event_id"] in set(n["member_event_ids"])]
+        d["group_ids"] = groups_of.get(d["event_id"], [])
         out.append(d)
     return out
 
 
 def persist(con: duckdb.DuckDBPyConnection, res: dict, payloads: list[dict], rules) -> None:
     def table(name, rows, cols):
+        # One columnar insert per table (Phase 1 issued one INSERT per row).
         con.execute(f"DROP TABLE IF EXISTS {name}")
         con.execute(f"CREATE TABLE {name} ({', '.join(f'{c} VARCHAR' for c in cols)})")
-        for r in rows:
-            con.execute(f"INSERT INTO {name} VALUES ({', '.join('?' * len(cols))})",
-                        [r.get(c) if isinstance(r.get(c), str) or r.get(c) is None else dumps(r.get(c)) for c in cols])
+        if not rows:
+            return
+        data = {c: [r.get(c) if isinstance(r.get(c), str) or r.get(c) is None else dumps(r.get(c)) for r in rows]
+                for c in cols}
+        con.register("_persist_batch", pa.table(data, schema=pa.schema([(c, pa.string()) for c in cols])))
+        con.execute(f"INSERT INTO {name} SELECT * FROM _persist_batch")
+        con.unregister("_persist_batch")
 
     table("alert_groups", res["groups"], ["group_id", "rule_id", "technique_id", "tactic", "ts_first", "ts_last",
                                           "raw_alert_count", "detection_ids", "member_event_ids", "entities",

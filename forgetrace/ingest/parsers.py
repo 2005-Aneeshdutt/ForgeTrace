@@ -9,6 +9,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
 
 import orjson
 
@@ -111,6 +112,22 @@ def _internal_nets():
     return _NETS
 
 
+def _memo(fn):
+    """Memoise a pure normaliser on hashable inputs. IPs, users and hosts repeat millions of times in a
+    large file, and ipaddress parsing dominated the per-line profile (docs/wp/SC-1.md). Bounded so a
+    file with unbounded cardinality cannot grow it without limit."""
+    cached = lru_cache(maxsize=1 << 16)(fn)
+
+    def wrapper(v):
+        try:
+            return cached(v)
+        except TypeError:  # unhashable input: compute directly
+            return fn(v)
+    wrapper.__wrapped__ = fn
+    return wrapper
+
+
+@_memo
 def norm_ip(v) -> str | None:
     if v is None or v == "":
         return None
@@ -123,6 +140,7 @@ def norm_ip(v) -> str | None:
     return str(ip)
 
 
+@_memo
 def is_external(ip: str | None) -> bool | None:
     if ip is None:
         return None
@@ -130,6 +148,7 @@ def is_external(ip: str | None) -> bool | None:
     return not any(a in n for n in _internal_nets())
 
 
+@_memo
 def norm_user(v) -> str | None:
     """Canonical user: lower-case bare account name; domain kept in user_domain (DECISIONS D-14)."""
     if v is None or v == "":
@@ -142,6 +161,7 @@ def norm_user(v) -> str | None:
     return s or None
 
 
+@_memo
 def norm_host(v) -> str | None:
     if v is None or v == "":
         return None
@@ -241,10 +261,17 @@ def normalise(raw: dict, fmt: str) -> dict:
     return ev
 
 
+@lru_cache(maxsize=1)
+def _event_type_rules() -> tuple:
+    """field_map event_types with their value lists stringified once (was rebuilt per event)."""
+    return tuple((r["type"], tuple((k, frozenset(str(x) for x in vals)) for k, vals in r["when"].items()))
+                 for r in config.field_map()["event_types"])
+
+
 def classify(ev: dict) -> str | None:
-    for r in config.field_map()["event_types"]:
-        if all(str(ev.get(k)) in [str(x) for x in vals] for k, vals in r["when"].items()):
-            return r["type"]
+    for typ, conds in _event_type_rules():
+        if all(str(ev.get(k)) in vals for k, vals in conds):
+            return typ
     return None
 
 

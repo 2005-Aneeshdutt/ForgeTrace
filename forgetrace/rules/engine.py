@@ -7,12 +7,14 @@ envelope fields (ALLOWED_FIELDS) so vendor verdict fields can never be used.
 """
 from __future__ import annotations
 
+import bisect
 import json
 import re
 from pathlib import Path
 from typing import Any, Literal
 
 import duckdb
+import pyarrow as pa
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -21,10 +23,19 @@ from forgetrace.ingest.ingest import SCHEMA
 
 # Detection may never read these (also enforced by tests/test_vendor_ban.py).
 BANNED_PREFIXES = ("threat.", "rule.", "labels", "event.kind", "event.severity")
-NON_DETECTION_FIELDS = {"event_id", "file_id", "byte_offset", "line_no", "line_digest", "source_event_id"}
+NON_DETECTION_FIELDS = {"event_id", "file_id", "byte_offset", "line_no", "line_digest", "source_event_id", "dataset"}
 ALLOWED_FIELDS = set(SCHEMA.names) - NON_DETECTION_FIELDS
 ENTITY_FIELDS = ["user", "target_user", "host", "host_ip", "src_ip", "dst_ip", "logon_id", "domain_name",
                  "process", "group_name"]
+_DET_ARROW = pa.schema([
+    ("detection_id", pa.string()), ("rule_id", pa.string()), ("rule_version", pa.int32()), ("rule_author", pa.string()),
+    ("rule_title", pa.string()), ("technique_id", pa.string()), ("technique_name", pa.string()), ("tactic", pa.string()),
+    ("tactic_ordinal", pa.int32()), ("kill_chain_phase", pa.string()), ("severity", pa.int32()), ("confidence", pa.float64()),
+    ("label_priority", pa.int32()), ("ts_first", pa.timestamp("us")), ("ts_last", pa.timestamp("us")),
+    ("member_event_ids", pa.list_(pa.int64())), ("member_count", pa.int32()), ("evidence", pa.string()),
+    ("aggregate_by", pa.list_(pa.string())), ("duplicate_of", pa.string()), ("detector", pa.string()),
+    ("score", pa.float64()), ("reasons", pa.string()),
+])
 OPS = {"eq", "ne", "in", "contains", "startswith", "endswith", "regex", "gte", "lte", "gt", "lt",
        "is_null", "not_null", "rare"}
 
@@ -258,44 +269,20 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
             nj = len(rule.followed_by.join_on)
             for eid, ts, *kv in con.execute(sql["followed_by"]).fetchall():
                 followers.setdefault(tuple(kv[:nj]), []).append((ts, eid, tuple(kv[nj:])))
+            ftimes = {k: [t.timestamp() for t, _, _ in v] for k, v in followers.items()}
         for key in sorted(by_key, key=lambda k: tuple(str(x) for x in k)):
             evs = by_key[key]
-            cur: list | None = None
-            windows = []
-            for i, (ts, eid, cnt) in enumerate(evs):
-                if cnt >= n:
-                    # window members: events within W before this one
-                    lo = ts.timestamp() - W
-                    mem = [(t, e) for t, e, _ in evs[: i + 1] if t.timestamp() >= lo]
-                    if cur and mem[0][0].timestamp() <= cur[-1][0].timestamp() + W:
-                        cur.extend(m for m in mem if m not in cur)
-                    else:
-                        if cur:
-                            windows.append(cur)
-                        cur = list(mem)
-            if cur:
-                windows.append(cur)
+            windows = merge_windows(evs, n, W)
             keydesc = ", ".join(f"{k}={v}" for k, v in zip(rule.group_by, key))
             for win in windows:
-                win.sort()
                 ev = f"count={len(win)} >= {n} within {rule.threshold.window} for {keydesc}"
                 members = [e for _, e in win]
                 ts_last = win[-1][0]
                 if rule.followed_by:
                     fb = rule.followed_by
                     jk = tuple(key[rule.group_by.index(k)] for k in fb.join_on)
-                    lim = parse_duration(fb.within)
-                    # Follower must come after a window member and within `within` of it; members are
-                    # restricted to the window events preceding the follower inside that bound.
-                    hit, pre = None, []
-                    for t, e, flink in followers.get(jk, []):
-                        if e in members:
-                            continue
-                        pre = [(wt, we) for wt, we in win if 0 <= t.timestamp() - wt.timestamp() <= lim
-                               and (not nl or wlink[we] == flink)]
-                        if len(pre) >= n:
-                            hit = (t, e)
-                            break
+                    hit, pre = first_follower(win, followers.get(jk, []), n, parse_duration(fb.within),
+                                              wlink if nl else None, ftimes.get(jk, []))
                     if hit is None:
                         continue
                     members = [we for _, we in pre] + [hit[1]]
@@ -309,6 +296,72 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
                 dets.append({"members": members, "ts_first": win[0][0], "ts_last": ts_last, "evidence": ev,
                              "aggregate_key": keydesc})
     return dets
+
+
+# ----------------------------------------------------------------------------- threshold windows
+# Why this exists: a threshold rule turns every event whose SQL window count reaches `count` into a
+# window of the events in the preceding W seconds, and overlapping or touching windows (next window
+# starts within W of the previous window's last event) merge into one maximal detection, so no
+# member is ever dropped. Phase 1 rebuilt each window by rescanning all earlier events of the key
+# and de-duplicated with list membership, which is O(k^2) per group key; on dense keys (an Office
+# launch every few minutes for R010, a user's typo failures for R001c) a 10 GB run did not finish
+# detection in 54 min. Events of a key arrive sorted by (ts, event_id), so a two-pointer sweep gives
+# the same windows in O(k): the window start only moves forward, and a merged window is a union of
+# index ranges that never leaves a gap above the current start. Pinned to the Phase 1 output by
+# tests/test_engine_windows.py.
+def merge_windows(evs: list[tuple], n: int, W: float) -> list[list[tuple]]:
+    """evs = [(ts, event_id, window_count)] sorted by (ts, event_id). Returns sorted [(ts, event_id)] lists."""
+    T = [ts.timestamp() for ts, _, _ in evs]
+    windows: list[list[int]] = []
+    cur: list[int] | None = None
+    lo = 0
+    for i in range(len(evs)):
+        if evs[i][2] < n:
+            continue
+        lim = T[i] - W
+        while T[lo] < lim:
+            lo += 1
+        if cur is not None and T[lo] <= T[cur[-1]] + W:
+            cur.extend(range(max(lo, cur[-1] + 1), i + 1))
+        else:
+            if cur is not None:
+                windows.append(cur)
+            cur = list(range(lo, i + 1))
+    if cur is not None:
+        windows.append(cur)
+    return [[(evs[j][0], evs[j][1]) for j in w] for w in windows]
+
+
+def first_follower(win: list[tuple], followers: list[tuple], n: int, lim: float,
+                   wlink: dict | None, ftimes: list[float] | None = None) -> tuple[tuple | None, list]:
+    """First follower (in (ts, event_id) order) preceded within `lim` seconds by >= n window members
+    (with matching link values when the rule has a `link`). Binary search replaces the Phase 1 scan
+    of the whole window per follower, and `ftimes` (the followers' sorted timestamps) lets the scan
+    start at the window instead of at the key's first follower; followers outside
+    [first member, last member + lim] cannot have members before them within lim, so skipping them
+    changes nothing. The boundary test is the original float expression."""
+    Tw = [t.timestamp() for t, _ in win]
+    members = {e for _, e in win}
+    if not Tw:
+        return None, []
+    if ftimes is None:
+        ftimes = [t.timestamp() for t, _, _ in followers]
+    lo = bisect.bisect_left(ftimes, Tw[0] - 1)
+    for idx in range(lo, len(followers)):
+        t, e, flink = followers[idx]
+        tf = ftimes[idx]
+        if tf - Tw[-1] > lim + 1:
+            break
+        if e in members:
+            continue
+        if tf < Tw[0]:
+            continue
+        a = bisect.bisect_left(Tw, tf - lim - 1)
+        b = bisect.bisect_right(Tw, tf + 1)
+        pre = [win[k] for k in range(a, b) if 0 <= tf - Tw[k] <= lim and (wlink is None or wlink[win[k][1]] == flink)]
+        if len(pre) >= n:
+            return (t, e), pre
+    return None, []
 
 
 def detect(con: duckdb.DuckDBPyConnection, rules: list[Rule]) -> dict:
@@ -345,20 +398,27 @@ def detect(con: duckdb.DuckDBPyConnection, rules: list[Rule]) -> dict:
 
 def _duplicates(rows: list[dict]) -> None:
     """Dossier §12 step 1: a detection whose members are all inside a stronger detection of the
-    same technique is marked duplicate_of (kept for audit, excluded from correlation)."""
+    same technique is marked duplicate_of (kept for audit, excluded from correlation).
+    A superset must contain the detection's first member, so candidates come from an event index
+    instead of comparing every pair (Phase 1 was O(d^2) set builds per technique). Among qualifying
+    candidates the earliest in input order wins, exactly as the Phase 1 scan did."""
     by_tech: dict[str, list[dict]] = {}
     for r in rows:
         r["duplicate_of"] = None
         by_tech.setdefault(r["technique_id"], []).append(r)
     for group in by_tech.values():
-        for r in group:
-            ms = set(r["member_event_ids"])
-            for o in group:
-                if o is r:
+        sets = [set(r["member_event_ids"]) for r in group]
+        holders: dict[int, list[int]] = {}
+        for j, ms in enumerate(sets):
+            for m in ms:
+                holders.setdefault(m, []).append(j)
+        for i, r in enumerate(group):
+            key = (r["severity"], -r["label_priority"], r["detection_id"])
+            for j in holders.get(r["member_event_ids"][0], []):  # ascending j = Phase 1 scan order
+                if j == i:
                     continue
-                stronger = (o["severity"], -o["label_priority"], o["detection_id"]) > \
-                           (r["severity"], -r["label_priority"], r["detection_id"])
-                if stronger and ms <= set(o["member_event_ids"]):
+                o = group[j]
+                if (o["severity"], -o["label_priority"], o["detection_id"]) > key and sets[i] <= sets[j]:
                     r["duplicate_of"] = o["detection_id"]
                     break
 
@@ -372,13 +432,15 @@ def _write(con: duckdb.DuckDBPyConnection, rows: list[dict]) -> None:
         evidence VARCHAR, aggregate_by VARCHAR[], duplicate_of VARCHAR, entities JSON,
         detector VARCHAR, score DOUBLE, reasons JSON)""")
     rows.sort(key=lambda r: (r["ts_first"], r["rule_id"], r["detection_id"]))
-    for r in rows:
-        con.execute("INSERT INTO detections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?)",
-                    [r[k] for k in ("detection_id", "rule_id", "rule_version", "rule_author", "rule_title",
-                                    "technique_id", "technique_name", "tactic", "tactic_ordinal",
-                                    "kill_chain_phase", "severity", "confidence", "label_priority", "ts_first",
-                                    "ts_last", "member_event_ids", "member_count", "evidence", "aggregate_by",
-                                    "duplicate_of", "detector", "score")] + [dumps(r["reasons"])])
+    cols = ("detection_id", "rule_id", "rule_version", "rule_author", "rule_title", "technique_id", "technique_name",
+            "tactic", "tactic_ordinal", "kill_chain_phase", "severity", "confidence", "label_priority", "ts_first",
+            "ts_last", "member_event_ids", "member_count", "evidence", "aggregate_by", "duplicate_of", "detector", "score")
+    # One columnar insert instead of a statement per detection.
+    batch = pa.table({**{c: [r[c] for r in rows] for c in cols}, "reasons": [dumps(r["reasons"]) for r in rows]},
+                     schema=_DET_ARROW)
+    con.register("_det_batch", batch)
+    con.execute(f"INSERT INTO detections ({', '.join(cols)}, reasons) SELECT {', '.join(cols)}, reasons FROM _det_batch")
+    con.unregister("_det_batch")
     # Entities: distinct envelope entity values over each detection's member events.
     aggs = ", ".join(f"list(DISTINCT e.\"{f}\" ORDER BY e.\"{f}\") FILTER (WHERE e.\"{f}\" IS NOT NULL) AS \"{f}\""
                      for f in ENTITY_FIELDS)

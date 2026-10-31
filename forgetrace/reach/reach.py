@@ -49,9 +49,24 @@ def compromised_set(incident: dict, gid: dict) -> dict[str, dict]:
     return C
 
 
+REACH_EVENTS_SQL = """CREATE OR REPLACE TABLE reach_events AS
+    SELECT event_id, ts, event_type, logon_type, user, target_user, host, group_name FROM events
+    WHERE event_type IN ('auth_success', 'group_add')"""
+
+
+def _source(con: duckdb.DuckDBPyConnection) -> str:
+    """reach_events when the run materialised it (pipeline), else the full events view (old workspaces)."""
+    try:
+        con.execute("SELECT 1 FROM reach_events LIMIT 0")
+        return "reach_events"
+    except duckdb.Error:
+        return "events"
+
+
 def context_graph(con: duckdb.DuckDBPyConnection, incident: dict) -> tuple[nx.DiGraph, bool]:
     """Step 2: edges mean 'control of source plausibly enables control of target'."""
     cfg = _cfg()
+    src = _source(con)
     w = cfg["weights"]
     G = nx.DiGraph()
     end = incident["ts_last"]
@@ -64,14 +79,14 @@ def context_graph(con: duckdb.DuckDBPyConnection, incident: dict) -> tuple[nx.Di
 
     admin_types = [t.lower() for t in cfg["admin_logon_types"]]
     for user, host, eids in con.execute(
-            """SELECT user, host, list(event_id ORDER BY ts, event_id)[1:5] FROM events
+            f"""SELECT user, host, list(event_id ORDER BY ts, event_id)[1:5] FROM {src}
                WHERE event_type = 'auth_success' AND lower(logon_type) IN (SELECT unnest(?))
                  AND user IS NOT NULL AND host IS NOT NULL AND ts BETWEEN ? AND ?
                GROUP BY user, host ORDER BY user, host""", [admin_types, start, end]).fetchall():
         add(f"account:{user}", f"host:{host}", "ADMIN_TO", "observed", w["observed_admin_to"],
             {"event_ids": eids, "text": f"observed interactive logon of {user} on {host}"})
     for user, host, eids in con.execute(
-            """SELECT user, host, list(event_id ORDER BY ts, event_id)[1:5] FROM events
+            f"""SELECT user, host, list(event_id ORDER BY ts, event_id)[1:5] FROM {src}
                WHERE event_type = 'auth_success' AND lower(logon_type) IN (SELECT unnest(?))
                  AND user IS NOT NULL AND host IS NOT NULL AND ts BETWEEN ? AND ?
                GROUP BY user, host ORDER BY user, host""",
@@ -79,7 +94,7 @@ def context_graph(con: duckdb.DuckDBPyConnection, incident: dict) -> tuple[nx.Di
         add(f"host:{host}", f"account:{user}", "CREDENTIAL_EXPOSURE", "inferred", w["credential_exposure"],
             {"event_ids": eids, "text": f"{user} had an interactive session on {host}; an attacker there could obtain it"})
     for tgt, host, grp, eids in con.execute(
-            """SELECT target_user, host, group_name, list(event_id ORDER BY ts, event_id)[1:5] FROM events
+            f"""SELECT target_user, host, group_name, list(event_id ORDER BY ts, event_id)[1:5] FROM {src}
                WHERE event_type = 'group_add' AND target_user IS NOT NULL AND host IS NOT NULL
                  AND lower(group_name) IN (SELECT unnest(?)) AND ts BETWEEN ? AND ?
                GROUP BY ALL ORDER BY ALL""",
@@ -131,7 +146,7 @@ def reachability(con: duckdb.DuckDBPyConnection, incident: dict, gid: dict, remo
                  G: nx.DiGraph | None = None) -> dict:
     cfg = _cfg()
     C = compromised_set(incident, gid)
-    fixture = True
+    fixture = config.assets() is not None  # same test context_graph applies
     if G is None:
         G, fixture = context_graph(con, incident)
     G = G.copy()
@@ -194,9 +209,10 @@ def simulate(con, incident: dict, gid: dict, actions: list[dict]) -> dict:
             "disclaimer": cfg["disclaimer"].format(X=X, Y=Y)}
 
 
-def candidate_actions(con, incident: dict, gid: dict) -> list[dict]:
+def candidate_actions(con, incident: dict, gid: dict, G: nx.DiGraph | None = None) -> list[dict]:
     """Step 5 (subset): rank disable_account over accounts in or reachable from the compromised set."""
-    G, _ = context_graph(con, incident)
+    if G is None:
+        G, _ = context_graph(con, incident)
     base = reachability(con, incident, gid, G=G)
     accts = sorted({n for n in (list(G.nodes) + [c["node"] for c in base["compromised"]])
                     if n.startswith("account:")} & set(_reached_accounts(G, base)))

@@ -1,10 +1,10 @@
-"""Streaming ingestion (dossier §11).
+"""Streaming, parallel ingestion (dossier §11).
 
-Why this exists: raw text is never held in bulk. Each file is read line by line in binary
-mode; for every line we keep its starting byte offset, 1-based line number and SHA-256
-digest, normalise it, and append it to Arrow column buffers flushed to Parquet every
-`batch_rows` rows. Memory is bounded by the batch size, not by the file size.
-Phase 1 is single-process; byte-range parallelism (§11 steps 2-3) is deferred.
+Why this exists: raw text is never held in bulk. Files are split into line-aligned byte ranges
+that worker processes read line by line in binary mode; for every line we keep its starting byte
+offset, 1-based line number and SHA-256 digest, normalise it, and append it to Arrow column
+buffers flushed to Parquet every `batch_rows` rows. Memory is bounded by workers x batch size,
+not by the file size.
 """
 from __future__ import annotations
 
@@ -72,83 +72,217 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000, progress=None, dataset: str | None = None) -> dict:
-    """progress(bytes_done, bytes_total) is called about every 20k lines (optional); `dataset`
-    is stamped on every event (PHASE2 frozen Event interface)."""
-    out.mkdir(parents=True, exist_ok=True)
-    ev_dir = out / "events"
-    ev_dir.mkdir(exist_ok=True)
-    for old in ev_dir.glob("*.parquet"):
-        old.unlink()
-    max_line = config.field_map()["max_line_bytes"]
+RANGE_BYTES = 64 * 2**20   # unit of parallel work (dossier §11 step 2: byte-range planning)
+WORKER_BATCH_ROWS = 50_000  # rows buffered per worker before a Parquet row group is written
+
+
+def default_workers() -> int:
+    """All cores but one (the parent hashes files and collects results). On an M2 Pro that is 9:
+    6 performance + 4 efficiency cores; ranges are handed out dynamically, so faster cores
+    simply take more of them."""
+    env = os.environ.get("FORGETRACE_WORKERS")
+    return max(1, int(env)) if env else max(1, (os.cpu_count() or 2) - 1)
+
+
+def plan_ranges(path: Path, size: int, range_bytes: int = RANGE_BYTES) -> list[tuple[int, int]]:
+    """Split a file into [start, end) byte ranges that each begin at a line start."""
+    if size == 0:
+        return []
+    cuts = [0]
+    with open(path, "rb") as f:
+        pos = range_bytes
+        while pos < size:
+            f.seek(pos - 1)
+            if f.read(1) != b"\n":
+                f.readline()  # move to the start of the next line
+            nxt = f.tell()
+            if nxt >= size:
+                break
+            if nxt > cuts[-1]:
+                cuts.append(nxt)
+            pos = max(nxt, pos) + range_bytes
+    cuts.append(size)
+    return list(zip(cuts[:-1], cuts[1:]))
+
+
+def _count_lines(job: tuple[str, int, int]) -> int:
+    """Physical lines in [start, end): newline count, plus one for a final unterminated line."""
+    path, start, end = job
+    n, last = 0, b""
+    with open(path, "rb") as f:
+        f.seek(start)
+        left = end - start
+        while left > 0:
+            chunk = f.read(min(8 * 2**20, left))
+            if not chunk:
+                break
+            n += chunk.count(b"\n")
+            last = chunk[-1:]
+            left -= len(chunk)
+    return n + (1 if last and last != b"\n" else 0)
+
+
+def _ingest_range(job: dict) -> dict:
+    """Parse one byte range into its own Parquet file (+ parse-error file). Runs in a worker process.
+    Line numbers start at job['base_line'] + 1, so results are identical to a sequential pass."""
+    file_id, start, end = job["file_id"], job["start"], job["end"]
+    max_line, batch_rows, dataset = job["max_line"], job["batch_rows"], job["dataset"]
     names = SCHEMA.names
-    files, stats = [], {"lines": 0, "events": 0, "errors": 0, "empty": 0}
+    stats = {"lines": 0, "events": 0, "errors": 0, "empty": 0}
     buf: dict[str, list] = {n: [] for n in names}
     errs: dict[str, list] = {n: [] for n in ERR_SCHEMA.names}
-    part = 0
+    writer = None
+    ev_path = Path(job["events_path"])
 
     def flush():
-        nonlocal part, buf
+        nonlocal buf, writer
         if not buf["event_id"]:
             return
         tbl = pa.Table.from_pydict(buf, schema=SCHEMA)
-        pq.write_table(tbl, ev_dir / f"part-{part:05d}.parquet", compression="zstd", row_group_size=128_000)
-        part += 1
+        if writer is None:
+            writer = pq.ParquetWriter(ev_path, SCHEMA, compression="zstd")
+        writer.write_table(tbl, row_group_size=128_000)
         buf = {n: [] for n in names}
 
+    offset, line_no = start, job["base_line"]
+    with open(job["path"], "rb") as f:
+        f.seek(start)
+        while offset < end:
+            line = f.readline(max_line + 1)
+            if not line:
+                break
+            lstart = offset
+            offset += len(line)
+            line_no += 1
+            stats["lines"] += 1
+            if len(line) > max_line and not line.endswith(b"\n"):
+                rest = f.readline()  # consume remainder of an oversized line
+                offset += len(rest)
+                _err(errs, file_id, lstart, line_no, "line exceeds max_line_bytes", strip_eol(line))
+                stats["errors"] += 1
+                continue
+            content = strip_eol(line)
+            if not content.strip():
+                stats["empty"] += 1
+                continue
+            eid = make_event_id(file_id, lstart)
+            try:
+                ev = parse_line(content)
+            except ParseError as e:
+                _err(errs, file_id, lstart, line_no, str(e), content)
+                stats["errors"] += 1
+                continue
+            except Exception as e:  # defensive: never crash on one bad line
+                _err(errs, file_id, lstart, line_no, f"unexpected: {type(e).__name__}: {e}", content)
+                stats["errors"] += 1
+                continue
+            ev.update(event_id=eid, file_id=file_id, byte_offset=lstart, line_no=line_no,
+                      line_digest=line_digest(content), dataset=dataset)
+            for n in names:
+                buf[n].append(ev.get(n))
+            stats["events"] += 1
+            if len(buf["event_id"]) >= batch_rows:
+                flush()
+    flush()
+    if writer is not None:
+        writer.close()
+    if errs["event_id"]:
+        pq.write_table(pa.Table.from_pydict(errs, schema=ERR_SCHEMA), job["errors_path"])
+    stats["bytes"] = end - start
+    stats["range"] = job["range_index"]
+    return stats
+
+
+def ingest(inputs: list[Path], out: Path, batch_rows: int = WORKER_BATCH_ROWS, progress=None,
+           dataset: str | None = None, workers: int | None = None, range_bytes: int = RANGE_BYTES) -> dict:
+    """Parallel byte-range ingest (dossier §11 steps 2-3; PHASE2 SC-2/SC-5 bounded memory).
+
+    1. Plan ~64 MB ranges per file, each starting at a line boundary.
+    2. Count newlines per range in parallel to give every range its first line number.
+    3. Parse ranges in a process pool; each writes events/part-<file>-<range>.parquet and,
+       if any, parse_errors/part-<file>-<range>.parquet. Memory per worker is bounded by
+       `batch_rows`; the parent only holds per-range counters.
+    4. Whole-file SHA-256 runs in a parent thread while workers parse.
+    Output rows (event_id, byte_offset, line_no, digest, envelope) are identical to the Phase 1
+    sequential reader for any worker count (tests/test_parallel_ingest.py).
+    progress(bytes_done, bytes_total) is called as ranges finish.
+    """
+    from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+    import multiprocessing as mp
+
+    out.mkdir(parents=True, exist_ok=True)
+    ev_dir, err_dir = out / "events", out / "parse_errors"
+    for d in (ev_dir, err_dir):
+        d.mkdir(exist_ok=True)
+        for old in d.glob("*.parquet"):
+            old.unlink()
+    legacy_err = out / "parse_errors.parquet"
+    if legacy_err.exists():
+        legacy_err.unlink()
+    max_line = config.field_map()["max_line_bytes"]
     paths = sorted(Path(p).resolve() for p in inputs)
-    total_bytes, done_before = sum(os.path.getsize(p) for p in paths), 0
-    for file_id, path in enumerate(paths, start=1):
+    sizes = [os.path.getsize(p) for p in paths]
+    total_bytes = sum(sizes)
+    n_workers = workers or default_workers()
+    if total_bytes < 2 * range_bytes:
+        n_workers = 1  # small inputs: process start-up would cost more than it saves
+
+    ranges = []  # (file_id, path, start, end)
+    for file_id, (path, size) in enumerate(zip(paths, sizes), start=1):
+        for s, e in plan_ranges(path, size, range_bytes):
+            ranges.append((file_id, path, s, e))
+
+    hasher = ThreadPoolExecutor(max_workers=1)
+    sha_futs = [hasher.submit(_sha256_file, p) for p in paths]
+    pool = ProcessPoolExecutor(max_workers=n_workers, mp_context=mp.get_context("spawn")) if n_workers > 1 else None
+    mapper = pool.map if pool else map
+    counts = list(mapper(_count_lines, [(str(p), s, e) for _, p, s, e in ranges]))
+    jobs, base = [], {}
+    for i, ((file_id, path, s, e), c) in enumerate(zip(ranges, counts)):
+        jobs.append({"range_index": i, "file_id": file_id, "path": str(path), "start": s, "end": e,
+                     "base_line": base.get(file_id, 0), "max_line": max_line, "batch_rows": batch_rows,
+                     "dataset": dataset,
+                     "events_path": str(ev_dir / f"part-{file_id:03d}-{i:05d}.parquet"),
+                     "errors_path": str(err_dir / f"part-{file_id:03d}-{i:05d}.parquet")})
+        base[file_id] = base.get(file_id, 0) + c
+    stats = {"lines": 0, "events": 0, "errors": 0, "empty": 0}
+    done = 0
+    try:
+        results = (pool.submit(_ingest_range, j) for j in jobs) if pool else None
+        if pool:
+            from concurrent.futures import as_completed
+            futs = list(results)
+            for fut in as_completed(futs):
+                r = fut.result()
+                for k in stats:
+                    stats[k] += r[k]
+                done += r["bytes"]
+                if progress:
+                    progress(done, total_bytes)
+        else:
+            for j in jobs:
+                r = _ingest_range(j)
+                for k in stats:
+                    stats[k] += r[k]
+                done += r["bytes"]
+                if progress:
+                    progress(done, total_bytes)
+    finally:
+        if pool:
+            pool.shutdown()
+    if not any(err_dir.glob("*.parquet")):
+        pq.write_table(pa.Table.from_pydict({n: [] for n in ERR_SCHEMA.names}, schema=ERR_SCHEMA),
+                       err_dir / "part-none.parquet")
+    files = []
+    for file_id, (path, fut) in enumerate(zip(paths, sha_futs), start=1):
         st = os.stat(path)
         files.append({"file_id": file_id, "path": str(path), "size": st.st_size, "mtime": st.st_mtime,
-                      "sha256": _sha256_file(path)})
-        offset, line_no = 0, 0
-        with open(path, "rb") as f:
-            while True:
-                line = f.readline(max_line + 1)
-                if not line:
-                    break
-                start = offset
-                offset += len(line)
-                line_no += 1
-                stats["lines"] += 1
-                if progress and stats["lines"] % 20_000 == 0:
-                    progress(done_before + offset, total_bytes)
-                if len(line) > max_line and not line.endswith(b"\n"):
-                    rest = f.readline()  # consume remainder of an oversized line
-                    offset += len(rest)
-                    content = strip_eol(line)
-                    _err(errs, file_id, start, line_no, "line exceeds max_line_bytes", content)
-                    stats["errors"] += 1
-                    continue
-                content = strip_eol(line)
-                if not content.strip():
-                    stats["empty"] += 1
-                    continue
-                eid = make_event_id(file_id, start)
-                try:
-                    ev = parse_line(content)
-                except ParseError as e:
-                    _err(errs, file_id, start, line_no, str(e), content)
-                    stats["errors"] += 1
-                    continue
-                except Exception as e:  # defensive: never crash on one bad line
-                    _err(errs, file_id, start, line_no, f"unexpected: {type(e).__name__}: {e}", content)
-                    stats["errors"] += 1
-                    continue
-                ev.update(event_id=eid, file_id=file_id, byte_offset=start, line_no=line_no,
-                          line_digest=line_digest(content), dataset=dataset)
-                for n in names:
-                    buf[n].append(ev.get(n))
-                stats["events"] += 1
-                if len(buf["event_id"]) >= batch_rows:
-                    flush()
-        done_before += st.st_size
-    flush()
+                      "sha256": fut.result()})
+    hasher.shutdown()
     if progress:
         progress(total_bytes, total_bytes)
-    pq.write_table(pa.Table.from_pydict(errs, schema=ERR_SCHEMA), out / "parse_errors.parquet")
-    manifest = {"files": files, "stats": stats,
+    manifest = {"files": files, "stats": stats, "parallel": {"workers": n_workers, "ranges": len(jobs),
+                                                             "range_bytes": range_bytes},
                 "manifest_digest": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()}
     (out / "files.json").write_text(json.dumps(manifest, indent=1))
     return manifest

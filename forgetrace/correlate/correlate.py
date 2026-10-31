@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import math
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import duckdb
 
@@ -40,7 +40,8 @@ def aggregate(con: duckdb.DuckDBPyConnection) -> list[dict]:
     # also_matched, instead of becoming a separate node (keeps valid secondary matches visible).
     prim = dict(con.execute("SELECT event_id, primary_technique FROM event_labels").fetchall())
     secondary = [d for d in dets if all(prim.get(m) != d["technique_id"] for m in d["member_event_ids"])]
-    dets = [d for d in dets if d not in secondary]
+    sec_ids = {id(d) for d in secondary}
+    dets = [d for d in dets if id(d) not in sec_ids]
     dets.sort(key=lambda d: (d["rule_id"], d["aggregate_key"], d["ts_first"], d["detection_id"]))
     groups: list[dict] = []
     cur = None
@@ -69,8 +70,13 @@ def aggregate(con: duckdb.DuckDBPyConnection) -> list[dict]:
         g["also_matched"] = []
         g["p_malicious"] = None   # set by fusion (FU-2); null = rule-only run
         g["contributions"] = {}
+    groups_of_event: dict[int, list[int]] = defaultdict(list)
+    for gi, g in enumerate(groups):
+        for m in g["member_event_ids"]:
+            groups_of_event[m].append(gi)
     for d in sorted(secondary, key=lambda d: d["detection_id"]):
-        for g in groups:
+        cand = sorted({gi for m in d["member_event_ids"] for gi in groups_of_event.get(m, ())})
+        for g in (groups[gi] for gi in cand):  # same group order as scanning all groups
             if any(prim.get(m) == g["technique_id"] for m in set(d["member_event_ids"]) & set(g["member_event_ids"])):
                 g["also_matched"].append({"detection_id": d["detection_id"], "rule_id": d["rule_id"],
                                           "technique_id": d["technique_id"], "tactic": d["tactic"],
@@ -92,9 +98,9 @@ def entity_stats(con: duckdb.DuckDBPyConnection, groups: list[dict]) -> dict[str
         want["domain"].update(g["entities"]["domain_name"])
     deg: dict[str, int] = {}
     con.execute("CREATE OR REPLACE TEMP TABLE _w(t VARCHAR, v VARCHAR)")
-    for t in sorted(want):
-        for v in sorted(want[t]):
-            con.execute("INSERT INTO _w VALUES (?, ?)", [t, v])
+    rows = [(t, v) for t in sorted(want) for v in sorted(want[t])]
+    if rows:
+        con.executemany("INSERT INTO _w VALUES (?, ?)", rows)
     q = """
       SELECT 'user', w.v, count(DISTINCT e.host) FROM _w w JOIN events e ON e.user = w.v WHERE w.t='user' GROUP BY 1,2
       UNION ALL SELECT 'host', w.v, count(DISTINCT e.user) FROM _w w JOIN events e ON e.host = w.v WHERE w.t='host' GROUP BY 1,2
@@ -181,14 +187,25 @@ def candidate_edges(groups: list[dict], ipmap: dict, deg: dict, con: duckdb.Duck
         ents |= k["src_host"] | k["dst_host"]
         for ek in sorted(ents):
             index[ek].append(g["group_id"])
+    # Phase 1 enumerated every pair of groups sharing an entity and dropped out-of-window pairs later,
+    # which is quadratic for a busy entity (a domain controller, a service account). A pair (a, b) with
+    # order(a) <= order(b) survives the later filters only if b.ts_first <= a.ts_last + window, so each
+    # entity's groups are sorted by order and scanned forward only while that can hold. Groups with an
+    # identical order key are paired in both directions, as the Phase 1 stable sort did.
     pairs = set()
+    win = timedelta(seconds=cfg["window_s"])
     for ek in sorted(index):
-        ids = index[ek]
-        for i in range(len(ids)):
-            for j in range(len(ids)):
-                if i != j:
-                    a, b = sorted((ids[i], ids[j]), key=lambda x: order[x])
-                    pairs.add((a, b))
+        ids = sorted(set(index[ek]), key=lambda x: order[x])
+        for p_, a in enumerate(ids):
+            limit = gid[a]["ts_last"] + win
+            q = p_ - 1
+            while q >= 0 and order[ids[q]] == order[a]:
+                pairs.add((a, ids[q]))
+                q -= 1
+            for b in ids[p_ + 1:]:
+                if gid[b]["ts_first"] > limit:
+                    break
+                pairs.add((a, b))
     edges = []
     for a_id, b_id in sorted(pairs, key=lambda p: (order[p[0]], order[p[1]])):
         a, b = gid[a_id], gid[b_id]
@@ -227,28 +244,36 @@ def candidate_edges(groups: list[dict], ipmap: dict, deg: dict, con: duckdb.Duck
 
 
 def _evidence_ids(edges: list[dict], gid: dict, con: duckdb.DuckDBPyConnection) -> None:
-    """Events in both endpoints that carry the shared entity values (dossier §13 edges)."""
+    """Events in both endpoints that carry the shared entity values (dossier §13 edges).
+    Member events of the kept edges' groups are loaded once; Phase 1 ran one query over all events
+    per edge, reason and endpoint."""
     col = {"session": ["logon_id"], "user": ["user", "target_user"], "host": ["host"], "ip": ["src_ip", "dst_ip"],
            "domain": ["domain_name"]}
+    fields = ["logon_id", "user", "target_user", "host", "src_ip", "dst_ip", "domain_name"]
+    need = sorted({m for e in edges for g in (e["src_group_id"], e["dst_group_id"]) for m in gid[g]["member_event_ids"]})
+    rows: dict[int, dict] = {}
+    if need:
+        for r in con.execute(f"SELECT event_id, {', '.join(fields)} FROM events WHERE event_id IN (SELECT unnest(?))",
+                             [need]).fetchall():
+            rows[r[0]] = dict(zip(fields, r[1:]))
+    ips_of_host: dict[str, set[str]] = defaultdict(set)
+    if any(r["type"] == "pivot_host" for e in edges for r in e["reasons"]):
+        for ip, host in con.execute("SELECT DISTINCT host_ip, host FROM events WHERE host_ip IS NOT NULL "
+                                    "AND host IS NOT NULL").fetchall():
+            ips_of_host[host].add(ip)
     for e in edges:
         ids = set()
         for r in e["reasons"]:
             t, v = r["entity_key"].split(":", 1)
-            cols = col.get(t, [])
-            if r["type"] == "pivot_host":
-                cols = ["host"]
-            for g in (gid[e["src_group_id"]], gid[e["dst_group_id"]]):
-                mem = g["member_event_ids"]
-                if not cols:
-                    continue
-                cond = " OR ".join(f'"{c}" = ?' for c in cols)
-                q = f"SELECT event_id FROM events WHERE event_id IN (SELECT unnest(?)) AND ({cond})"
-                ids.update(x[0] for x in con.execute(q, [mem] + [v] * len(cols)).fetchall())
+            cols = ["host"] if r["type"] == "pivot_host" else col.get(t, [])
+            if cols:
+                for g in (gid[e["src_group_id"]], gid[e["dst_group_id"]]):
+                    ids.update(m for m in g["member_event_ids"]
+                               if m in rows and any(rows[m][c] == v for c in cols))
             if r["type"] == "pivot_host":  # the pivoting event: b's member whose src_ip resolves to a's host
-                b = gid[e["dst_group_id"]]
-                q = ("SELECT e.event_id FROM events e WHERE e.event_id IN (SELECT unnest(?)) AND e.src_ip IN "
-                     "(SELECT DISTINCT host_ip FROM events WHERE host = ? AND host_ip IS NOT NULL)")
-                ids.update(x[0] for x in con.execute(q, [b["member_event_ids"], v]).fetchall())
+                hips = ips_of_host.get(v, set())
+                ids.update(m for m in gid[e["dst_group_id"]]["member_event_ids"]
+                           if m in rows and rows[m]["src_ip"] in hips)
         e["evidence_event_ids"] = sorted(ids)[:200]
 
 
@@ -313,11 +338,16 @@ def primary_path(members: list[str], edges: list[dict], gid: dict) -> dict:
     edge is reported as such rather than invented."""
     order = sorted(members, key=lambda v: (gid[v]["ts_first"], gid[v]["tactic_ordinal"], gid[v]["member_event_ids"][0]))
     by_pair = {(e["src_group_id"], e["dst_group_id"]): e for e in edges}
+    pos = {v: i for i, v in enumerate(order)}
+    into: dict[str, list[dict]] = defaultdict(list)
+    for (x, y), e in by_pair.items():
+        if x in pos and y in pos:
+            into[y].append(e)
     hops = []
     for a, b in zip(order, order[1:]):
         e = by_pair.get((a, b))
         if e is None:  # best kept edge into b from any earlier path node
-            prior = [by_pair[(x, b)] for x in order[: order.index(b)] if (x, b) in by_pair]
+            prior = [x for x in into.get(b, []) if pos[x["src_group_id"]] < pos[b]]
             e = max(prior, key=lambda x: (x["score"], x["edge_id"])) if prior else None
         hops.append({"from": a, "to": b, "edge_id": e["edge_id"] if e else None,
                      "score": e["score"] if e else None,
@@ -339,6 +369,9 @@ def build_incidents(groups: list[dict], edges: list[dict]) -> tuple[list[dict], 
     comps: dict[str, list[str]] = defaultdict(list)
     for g in sorted(gid):
         comps[uf.find(g)].append(g)
+    edges_of: dict[str, list[dict]] = defaultdict(list)
+    for e in edges:
+        edges_of[uf.find(e["src_group_id"])].append(e)
     incidents, abstained = [], []
     for root in sorted(comps, key=lambda r: min(gid[g]["ts_first"] for g in comps[r])):
         members = sorted(comps[root], key=lambda v: (gid[v]["ts_first"], gid[v]["tactic_ordinal"]))
@@ -346,7 +379,7 @@ def build_incidents(groups: list[dict], edges: list[dict]) -> tuple[list[dict], 
         for v in members:
             if gid[v]["tactic"] not in tactics:
                 tactics.append(gid[v]["tactic"])
-        ces = [e for e in edges if e["src_group_id"] in comps[root]]
+        ces = edges_of[root]  # same edges, same order as filtering the edge list
         if len(set(tactics)) < cfg["min_distinct_tactics"]:
             abstained.append({"group_ids": members, "tactics": tactics, "edge_ids": [e["edge_id"] for e in ces],
                               "reason": f"only {len(set(tactics))} distinct tactic(s); "

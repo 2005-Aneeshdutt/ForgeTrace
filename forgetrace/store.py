@@ -16,6 +16,7 @@ def connect(out: Path, read_only: bool = False) -> duckdb.DuckDBPyConnection:
 
 def create_views(con: duckdb.DuckDBPyConnection, out: Path) -> None:
     ev = str(out / "events" / "*.parquet").replace("'", "''")
-    pe = str(out / "parse_errors.parquet").replace("'", "''")
+    legacy = out / "parse_errors.parquet"  # workspaces ingested before parallel ingest
+    pe = str(legacy if legacy.exists() else out / "parse_errors" / "*.parquet").replace("'", "''")
     con.execute(f"CREATE OR REPLACE VIEW events AS SELECT * FROM read_parquet('{ev}')")
     con.execute(f"CREATE OR REPLACE VIEW parse_errors AS SELECT * FROM read_parquet('{pe}')")
