@@ -6,6 +6,8 @@
 internal_networks: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7"]
 max_line_bytes: 1048576
 command_line_max: 2048
+# Local wall-clock of the monitored site, used only for the derived local_hour field (firex: +05:30).
+local_utc_offset_minutes: 330
 
 formats:
   ecs_json:            # SimEDR / edr_events.json shape (one JSON object per line)
@@ -96,6 +98,11 @@ formats:
       fw_type: [type]
       fw_subtype: [subtype]
       session_id: [sessionid]
+      log_subtype: [subtype]
+      message: [msg, logdesc]
+      service: [service]
+      src_country: [srccountry]
+      dst_country: [dstcountry]
 
 # Canonical event_type (dossier §13). First matching rule wins; conditions are ANDed.
 event_types:
@@ -115,4 +122,6 @@ event_types:
   - {when: {fw_subtype: [webfilter]}, type: http_req}
   - {when: {fw_subtype: [system], action: [login], outcome: [failed]}, type: auth_fail}
   - {when: {fw_subtype: [system], action: [login], outcome: [success]}, type: auth_success}
+  - {when: {fw_subtype: [vpn], action: [tunnel-up]}, type: vpn_login}
+  - {when: {fw_subtype: [ips]}, type: http_req}
   - {when: {fw_subtype: [system]}, type: config_change}

@@ -1,0 +1,338 @@
+# FortiGate behaviour pack (RT-2 coverage; DECISIONS D-69). Behaviour only, by owner decision:
+# no rule reads the firewall's own verdicts (IPS attack name, AV virus name, web-filter category,
+# app risk). Conditions use counts, distinct counts, byte sums, ports, URL/DNS shapes, login outcomes,
+# configuration messages, countries and the derived subnet / local-hour fields.
+# Every rule is scoped to source_type = firewall (this pack assumes FortiGate fields; DECISIONS D-69).
+# Country names below are a site policy (where the business operates), not entities.
+
+- id: F001
+  version: 1
+  title: One source touching many ports on one host within a minute (port scan)
+  author: forgetrace
+  technique: T1046
+  tactic: Discovery
+  severity: 2
+  confidence: 0.9   # 100+ distinct ports on one target in 60 s is not application behaviour
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: dst_port, op: not_null}
+  group_by: [src_ip, dst_ip]
+  threshold: {count: 100, distinct: dst_port, window: 60s}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F002
+  version: 1
+  title: Failed logins from many addresses of one /24 (distributed credential stuffing)
+  author: forgetrace
+  technique: T1110.004
+  tactic: Credential Access
+  severity: 3
+  confidence: 0.7   # rotating addresses inside one /24 evade per-source thresholds; 15 in 6 h is unusual
+  label_priority: 22
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: auth_fail}
+      - {field: src_subnet24, op: not_null}
+  group_by: [src_subnet24]
+  threshold: {count: 15, distinct: src_ip, window: 6h}
+  aggregate_by: [src_subnet24]
+
+- id: F003
+  version: 1
+  title: Failures from one /24 followed by a success from the same /24
+  author: forgetrace
+  technique: T1110.001
+  tactic: Credential Access
+  severity: 4
+  confidence: 0.9   # the success after a failure burst is the compromise event
+  label_priority: 21
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: auth_fail}
+      - {field: src_subnet24, op: not_null}
+  group_by: [src_subnet24]
+  threshold: {count: 10, window: 30m}
+  followed_by:
+    filter:
+      all:
+        - {field: event_type, op: eq, value: auth_success}
+    join_on: [src_subnet24]
+    within: 30m
+  aggregate_by: [src_subnet24]
+
+- id: F004
+  version: 1
+  title: Successful administrator login in the small hours from outside the operating countries
+  author: forgetrace
+  technique: T1078.001
+  tactic: Initial Access
+  severity: 3
+  confidence: 0.7   # admin logins are rare (5 in firex-10G); night-time and foreign together is the anomaly
+  label_priority: 30
+  type: match
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: auth_success}
+      - {field: local_hour, op: lte, value: 5}
+      - {field: src_country, op: not_null}
+      - not: {field: src_country, op: in, value: [India, Reserved]}
+  aggregate_by: [user]
+
+- id: F005
+  version: 1
+  title: One VPN account connecting from two countries within minutes (impossible travel)
+  author: forgetrace
+  technique: T1078.004
+  tactic: Initial Access
+  severity: 3
+  confidence: 0.7
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: vpn_login}
+      - {field: user, op: not_null}
+      - {field: src_country, op: not_null}
+  group_by: [user]
+  threshold: {count: 2, distinct: src_country, window: 15m}
+  aggregate_by: [user]
+
+- id: F006
+  version: 1
+  title: One internal host opening SMB/RDP to many internal hosts (lateral movement sweep)
+  author: forgetrace
+  technique: T1021.002
+  tactic: Lateral Movement
+  severity: 3
+  confidence: 0.7
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: false}
+      - {field: dst_port, op: in, value: [445, 3389, 139, 5985]}
+  group_by: [src_ip]
+  threshold: {count: 15, distinct: dst_ip, window: 1h}
+  aggregate_by: [src_ip]
+
+- id: F007
+  version: 1
+  title: Many DNS lookups with very long labels under one domain (DNS tunnelling)
+  author: forgetrace
+  technique: T1071.004
+  tactic: Command and Control
+  severity: 3
+  confidence: 0.9   # 30+ character labels repeated dozens of times under one domain encode data
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: dns_query}
+      - {field: dns_label_max, op: gte, value: 30}
+      - {field: domain_base, op: not_null}
+  group_by: [src_ip, domain_base]
+  threshold: {count: 50, window: 1h}
+  aggregate_by: [src_ip, domain_base]
+
+- id: F008
+  version: 1
+  title: Repeated small outbound connections from one host to one external address (beaconing)
+  author: forgetrace
+  technique: T1071.001
+  tactic: Command and Control
+  severity: 3
+  confidence: 0.7   # benign destinations in this traffic are rarely revisited by the same host
+  label_priority: 31
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: true}
+      - {field: bytes_out, op: lte, value: 4096}
+  group_by: [src_ip, dst_ip]
+  threshold: {count: 30, window: 6h}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F009
+  version: 1
+  title: Tens of MB leaving to one external address in many pieces (staged exfiltration)
+  author: forgetrace
+  technique: T1048.002
+  tactic: Exfiltration
+  severity: 4
+  confidence: 0.7
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: true}
+  group_by: [src_ip, dst_ip]
+  threshold: {sum: bytes_out, min: 30000000, window: 3d}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F010
+  version: 1
+  title: Firewall logging disabled or policies purged by an administrator
+  author: forgetrace
+  technique: T1562.002
+  tactic: Defense Evasion
+  severity: 4
+  confidence: 0.9
+  label_priority: 20
+  type: match
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: config_change}
+      - any:
+          - {field: message, op: regex, value: "(?i)log[^']*setting'? changed from 'enable' to 'disable'"}
+          - {field: message, op: regex, value: "(?i)were purged"}
+  aggregate_by: [user]
+
+- id: F011
+  version: 1
+  title: Administrator account created on the firewall
+  author: forgetrace
+  technique: T1136.001
+  tactic: Persistence
+  severity: 3
+  confidence: 0.7   # admin creation is rare; paired with a quick delete it is a rogue account
+  label_priority: 25
+  type: match
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: config_change}
+      - {field: message, op: regex, value: "(?i)^add system\\.admin "}
+  aggregate_by: [user]
+
+- id: F012
+  version: 1
+  title: SQL injection payloads in request URLs from one source
+  author: forgetrace
+  technique: T1190
+  tactic: Initial Access
+  severity: 3
+  confidence: 0.9
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: url, op: regex, value: "(?i)(union(%20|\\+|\\s)+select|%27|'\\s*or\\s*'?1'?\\s*=|or%201%3D1|sleep\\(|waitfor(%20|\\s)+delay|benchmark\\(|information_schema)"}
+  group_by: [src_ip]
+  threshold: {count: 5, window: 10m}
+  aggregate_by: [src_ip]
+
+- id: F013
+  version: 1
+  title: Cross-site scripting payloads in request URLs from one source
+  author: forgetrace
+  technique: T1189
+  tactic: Initial Access
+  severity: 2
+  confidence: 0.9
+  label_priority: 31
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: url, op: regex, value: "(?i)(%3cscript|<script|onerror(%3d|=)|%3cimg|<img|javascript(%3a|:)|alert\\()"}
+  group_by: [src_ip]
+  threshold: {count: 5, window: 10m}
+  aggregate_by: [src_ip]
+
+- id: F014
+  version: 1
+  title: Path traversal and file-wrapper requests for configuration or password files
+  author: forgetrace
+  technique: T1083
+  tactic: Discovery
+  severity: 3
+  confidence: 0.9
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: url, op: regex, value: "(?i)(\\.\\./|\\.\\.%2f|%2e%2e|\\.\\.\\.\\.//|php://filter|/etc/passwd|win\\.ini)"}
+  group_by: [src_ip]
+  threshold: {count: 5, window: 10m}
+  aggregate_by: [src_ip]
+
+- id: F015
+  version: 1
+  title: Shell metacharacters in request parameters (command injection)
+  author: forgetrace
+  technique: T1059.004
+  tactic: Execution
+  severity: 3
+  confidence: 0.7
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: url, op: regex, value: "(?i)(=[^&]*(%3b|;|%7c|\\||%60|`|\\$\\()\\s*(%20)?(cat|id|whoami|wget|curl|nc|bash|sh|uname|ls)\\b)"}
+  group_by: [src_ip]
+  threshold: {count: 3, window: 10m}
+  aggregate_by: [src_ip]
+
+- id: F016
+  version: 1
+  title: Flood of connections to one target from one /16 within a minute (SYN flood)
+  author: forgetrace
+  technique: T1498.001
+  tactic: Impact
+  severity: 3
+  confidence: 0.7
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_subnet16, op: not_null}
+  group_by: [src_subnet16, dst_ip]
+  threshold: {count: 300, distinct: src_ip, window: 60s}
+  aggregate_by: [src_subnet16, dst_ip]
+
+- id: F017
+  version: 1
+  title: Unsolicited DNS answers from many external resolvers to one address (DNS amplification)
+  author: forgetrace
+  technique: T1498.002
+  tactic: Impact
+  severity: 3
+  confidence: 0.7
+  label_priority: 30
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_port, op: eq, value: 53}
+      - {field: src_is_external, op: eq, value: true}
+      - {field: bytes_out, op: gte, value: 1000}
+  group_by: [dst_ip]
+  threshold: {count: 50, distinct: src_ip, window: 10m}
+  aggregate_by: [dst_ip]

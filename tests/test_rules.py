@@ -76,7 +76,8 @@ def test_rule_negative(tmp_path, rule_id):
 
 def test_every_rule_has_fixtures():
     from forgetrace.rules.engine import load_rules
-    assert {r.id for r in load_rules()} == set(CASES)
+    from tests.test_rules_firewall import CASES as FW
+    assert {r.id for r in load_rules()} == set(CASES) | set(FW)
 
 
 def test_label_priority_and_also_matched(tmp_path):

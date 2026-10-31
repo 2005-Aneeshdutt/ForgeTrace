@@ -256,9 +256,41 @@ def normalise(raw: dict, fmt: str) -> dict:
         ev["command_line"] = ev["command_line"][: fm["command_line_max"]]
     if ev.get("domain_name"):
         ev["domain_name"] = ev["domain_name"].lower()
+    _derive(ev, fm)
     ev["event_type"] = classify(ev)
     ev["outcome"] = {"success": "success", "failure": "failure", "failed": "failure"}.get(ev.get("outcome") or "", "unknown")
     return ev
+
+
+@_memo
+def subnet(ip: str | None) -> tuple[str | None, str | None]:
+    """IPv4 /24 and /16 network of an address (strings like '10.10.20.0/24'); None for IPv6/None."""
+    if not ip or ":" in ip:
+        return None, None
+    a, b, c, _ = ip.split(".")
+    return f"{a}.{b}.{c}.0/24", f"{a}.{b}.0.0/16"
+
+
+@_memo
+def domain_parts(name: str | None) -> tuple[str | None, int | None]:
+    """Registered-domain approximation (last two labels) and the longest label length, for DNS
+    tunnelling (long encoded labels under one domain)."""
+    if not name:
+        return None, None
+    labels = [x for x in name.strip(".").split(".") if x]
+    if not labels:
+        return None, None
+    return ".".join(labels[-2:]), max(len(x) for x in labels)
+
+
+def _derive(ev: dict, fm: dict) -> None:
+    ev["src_subnet24"], ev["src_subnet16"] = subnet(ev.get("src_ip"))
+    ev["domain_base"], ev["dns_label_max"] = domain_parts(ev.get("domain_name"))
+    off = fm.get("local_utc_offset_minutes", 0)
+    ev["local_hour"] = int(((ev["ts"] // 1_000_000 + off * 60) // 3600) % 24)
+    for k in ("message", "service", "log_subtype", "src_country", "dst_country"):
+        if ev.get(k) is not None:
+            ev[k] = str(ev[k])
 
 
 @lru_cache(maxsize=1)

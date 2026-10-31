@@ -35,3 +35,24 @@ techniques:
   T1071.001: {name: Web Protocols, parent: T1071, tactics: [Command and Control]}
   T1041:     {name: Exfiltration Over C2 Channel, tactics: [Exfiltration]}
   T1204.002: {name: Malicious File, parent: T1204, tactics: [Execution]}
+  # Added for the FortiGate behaviour rule pack (DECISIONS D-69); names/tactics from ATT&CK Enterprise v18.
+  T1046:     {name: Network Service Discovery, tactics: [Discovery]}
+  T1110.003: {name: Password Spraying, parent: T1110, tactics: [Credential Access]}
+  T1110.004: {name: Credential Stuffing, parent: T1110, tactics: [Credential Access]}
+  T1078.001: {name: Default Accounts, parent: T1078, tactics: [Defense Evasion, Persistence, Privilege Escalation, Initial Access]}
+  T1078.004: {name: Cloud Accounts, parent: T1078, tactics: [Defense Evasion, Persistence, Privilege Escalation, Initial Access]}
+  T1071.004: {name: DNS, parent: T1071, tactics: [Command and Control]}
+  T1048.003: {name: Exfiltration Over Unencrypted Non-C2 Protocol, parent: T1048, tactics: [Exfiltration]}
+  T1048.002: {name: Exfiltration Over Asymmetric Encrypted Non-C2 Protocol, parent: T1048, tactics: [Exfiltration]}
+  T1562.002: {name: Disable Windows Event Logging, parent: T1562, tactics: [Defense Evasion]}
+  T1562.001: {name: Disable or Modify Tools, parent: T1562, tactics: [Defense Evasion]}
+  T1136.002: {name: Domain Account, parent: T1136, tactics: [Persistence]}
+  T1190:     {name: Exploit Public-Facing Application, tactics: [Initial Access]}
+  T1189:     {name: Drive-by Compromise, tactics: [Initial Access]}
+  T1083:     {name: File and Directory Discovery, tactics: [Discovery]}
+  T1059.004: {name: Unix Shell, parent: T1059, tactics: [Execution]}
+  T1505.003: {name: Web Shell, parent: T1505, tactics: [Persistence]}
+  T1498.001: {name: Direct Network Flood, parent: T1498, tactics: [Impact]}
+  T1498.002: {name: Reflection Amplification, parent: T1498, tactics: [Impact]}
+  T1499.002: {name: Service Exhaustion Flood, parent: T1499, tactics: [Impact]}
+  T1105:     {name: Ingress Tool Transfer, tactics: [Command and Control]}

@@ -36,6 +36,11 @@ SCHEMA = pa.schema([
     ("registry_path", pa.string()), ("registry_value", pa.string()), ("group_name", pa.string()),
     ("bytes_out", pa.int64()), ("bytes_in", pa.int64()), ("vendor_event_code", pa.string()),
     ("dataset", pa.string()),
+    # Firewall/behavioural fields (DECISIONS D-67): copied or derived, never vendor verdicts.
+    ("message", pa.string()), ("service", pa.string()), ("log_subtype", pa.string()),
+    ("src_country", pa.string()), ("dst_country", pa.string()),
+    ("src_subnet24", pa.string()), ("src_subnet16", pa.string()),
+    ("domain_base", pa.string()), ("dns_label_max", pa.int32()), ("local_hour", pa.int8()),
 ])
 ERR_SCHEMA = pa.schema([("file_id", pa.int16()), ("byte_offset", pa.int64()), ("line_no", pa.int64()),
                         ("event_id", pa.int64()), ("error", pa.string()), ("preview", pa.string()),

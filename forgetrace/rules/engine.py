@@ -48,12 +48,45 @@ def parse_duration(s: str) -> int:
 
 
 class Threshold(BaseModel):
-    count: int = Field(ge=1)
+    """count: events in the window >= count (default); distinct: distinct values of a field >= count
+    (port scans, password spraying, impossible travel); sum: total of a numeric field >= min (staged
+    exfiltration). All evaluated as a sliding window ending at each event (DECISIONS D-68)."""
+    count: int | None = Field(default=None, ge=1)
     window: str
+    distinct: str | None = None
+    sum: str | None = None
+    min: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _shape(self) -> "Threshold":
+        if self.distinct and self.sum:
+            raise ValueError("threshold: use either distinct or sum")
+        if self.sum and self.min is None:
+            raise ValueError("threshold.sum needs min")
+        if not self.sum and self.count is None:
+            raise ValueError("threshold needs count")
+        for f in (self.distinct, self.sum):
+            if f and f not in ALLOWED_FIELDS:
+                raise ValueError(f"threshold field {f!r} is not an envelope field")
+        return self
 
     @property
     def seconds(self) -> int:
         return parse_duration(self.window)
+
+    @property
+    def value(self) -> int:
+        return self.min if self.sum else self.count
+
+    def sql(self) -> str:
+        if self.distinct:
+            return f'count(DISTINCT "{self.distinct}")'
+        if self.sum:
+            return f'sum(coalesce("{self.sum}", 0))'
+        return "count(*)"
+
+    def describe(self) -> str:
+        return (f"distinct {self.distinct}" if self.distinct else f"sum {self.sum}" if self.sum else "count")
 
 
 class FollowedBy(BaseModel):
@@ -215,7 +248,7 @@ def compile_rule(rule: Rule) -> dict[str, str]:
         keys = ", ".join(f'"{k}"' for k in rule.group_by)
         wl = "".join(f', lower("{v}") AS "_w_{v}"' for v in (rule.followed_by.link.values() if rule.followed_by else []))
         sql["threshold"] = (
-            f"SELECT event_id, ts, {keys}{wl}, count(*) OVER (PARTITION BY {keys} ORDER BY ts "
+            f"SELECT event_id, ts, {keys}{wl}, {rule.threshold.sql()} OVER (PARTITION BY {keys} ORDER BY ts "
             f"RANGE BETWEEN INTERVAL {rule.threshold.seconds} SECOND PRECEDING AND CURRENT ROW) AS win_count "
             f"FROM events WHERE {where} AND " + " AND ".join(f'"{k}" IS NOT NULL' for k in rule.group_by)
             + f" ORDER BY {keys}, ts, event_id")
@@ -254,7 +287,7 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
                          "evidence": f"first-seen ({pair}) after {rule.first_seen.warmup} warm-up"})
     else:
         rows = con.execute(sql["threshold"]).fetchall()
-        n, W = rule.threshold.count, rule.threshold.seconds
+        n, W = rule.threshold.value, rule.threshold.seconds
         nk = len(rule.group_by)
         # Merge every qualifying window per key into maximal detections (members never dropped).
         nl = len(rule.followed_by.link) if rule.followed_by else 0
@@ -275,7 +308,10 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
             windows = merge_windows(evs, n, W)
             keydesc = ", ".join(f"{k}={v}" for k, v in zip(rule.group_by, key))
             for win in windows:
-                ev = f"count={len(win)} >= {n} within {rule.threshold.window} for {keydesc}"
+                ev = (f"count={len(win)} >= {n} within {rule.threshold.window} for {keydesc}" if not
+                      (rule.threshold.distinct or rule.threshold.sum) else
+                      f"{rule.threshold.describe()} >= {n} within {rule.threshold.window} for {keydesc} "
+                      f"({len(win)} events)")
                 members = [e for _, e in win]
                 ts_last = win[-1][0]
                 if rule.followed_by:
