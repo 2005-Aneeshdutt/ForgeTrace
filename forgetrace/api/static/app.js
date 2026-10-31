@@ -296,7 +296,7 @@ function tabPath(body, p, nodes) {
     const ents = [...n.entities.user.map((u) => `user:${u}`), ...n.entities.host.map((x) => `host:${x}`), ...n.entities.target_user.map((u) => `target:${u}`)];
     ol.append(h("li", null, h("span", { class: "num", text: i + 1 }),
       h("div", null, h("span", { class: "tactic", text: n.tactic }), "  ", h("span", { class: "tech mono", text: `${n.technique_id}` }), " ", h("span", { class: "tech", text: n.technique_name })),
-      h("div", { class: "when" }, `${fmtTs(n.ts_first)} · rule ${n.rule_id} — ${n.rule_title} · ${fmtN(n.member_count)} event${n.member_count === 1 ? "" : "s"} · severity ${n.severity}/4 · confidence ${n.confidence}`),
+      h("div", { class: "when" }, detectorPill(n.rule_id), ` ${fmtTs(n.ts_first)} · ${isModel(n.rule_id) ? "model" : "rule"} ${n.rule_id} — ${n.rule_title} · ${fmtN(n.member_count)} event${n.member_count === 1 ? "" : "s"} · severity ${n.severity}/4 · confidence ${n.confidence}${n.p_malicious != null ? ` · fused p ${fmtP(n.p_malicious)}` : ""}`),
       n.also_matched.length ? h("div", { class: "small muted", text: `Also matched: ${n.also_matched.map((a) => `${a.rule_id} ${a.technique_id}`).join(", ")}` }) : null,
       h("div", { class: "ent" }, ents.map((e) => h("span", { class: "chip mono", text: e }))),
       h("div", { class: "evlinks small" }, "Evidence: ", n.member_event_ids.slice(0, 6).map((e) => evLink(e)), n.member_event_ids.length > 6 ? h("span", { class: "muted", text: `+${n.member_event_ids.length - 6} more in Timeline` }) : null),
@@ -892,6 +892,12 @@ function listSection(title, items, mono) {
     h("ul", { class: "xlist" }, items.map((t) => h("li", { class: mono && /^(Print|Every line)/.test(t) ? "mono small" : "" , text: t }))));
 }
 
+const isModel = (rid) => String(rid || "").startsWith("ML-");
+const fmtP = (p) => (p == null ? "—" : Number(p).toFixed(2));
+function detectorPill(rid) {
+  return h("span", { class: `pill ${isModel(rid) ? "det-model" : "det-rule"}`, title: isModel(rid) ? "unsupervised model (behaviour / graph link)" : "deterministic rule", text: isModel(rid) ? "model" : "rule" });
+}
+
 function renderExplanation(box, x) {
   clear(box);
   if (x.error) { box.append(h("div", { class: "callout warn", text: x.error })); return; }
@@ -912,12 +918,16 @@ function renderExplanation(box, x) {
     const w = x.why_flagged;
     box.append(h("div", { class: "xsec" }, h("h4", { text: "Why it was flagged" }),
       h("div", { class: "kv" },
-        h("div", { class: "k", text: "Rule" }), h("div", { text: `${w.rule} · ${w.title || ""}` }),
+        h("div", { class: "k", text: isModel(w.rule) ? "Model" : "Rule" }), h("div", null, detectorPill(w.rule), ` ${w.rule} · ${w.title || ""}`),
+        w.type ? [h("div", { class: "k", text: "Type" }), h("div", { text: w.type })] : null,
         h("div", { class: "k", text: "Technique" }), h("div", { text: `${w.technique.id} ${w.technique.name || ""} (${w.technique.tactic})` }),
         h("div", { class: "k", text: "Condition" }), h("div", { class: "mono small", text: w.condition }),
         w.threshold ? [h("div", { class: "k", text: "Threshold" }), h("div", { text: w.threshold })] : null,
         w.followed_by ? [h("div", { class: "k", text: "Then" }), h("div", { text: w.followed_by })] : null,
         w.first_seen ? [h("div", { class: "k", text: "First seen" }), h("div", { text: w.first_seen })] : null,
+        (w.model_reasons || []).length ? [h("div", { class: "k", text: "Model reasons" }), h("div", null, w.model_reasons.map((o) => h("div", { class: "small", text: o })))] : null,
+        w.technique_basis ? [h("div", { class: "k", text: "Technique from" }), h("div", { class: "small", text: w.technique_basis })] : null,
+        w.fused_probability != null ? [h("div", { class: "k", text: "Fused p" }), h("div", { class: "small", text: `${fmtP(w.fused_probability)} — noisy-OR of detector priors agreeing on an entity: ${Object.entries(w.detector_priors || {}).map(([k, v]) => `${k} ${v}`).join(", ")}` })] : null,
         (w.observed || []).length ? [h("div", { class: "k", text: "Observed" }), h("div", null, w.observed.map((o) => h("div", { class: "small", text: o })))] : null)));
   }
   if (x.steps) {
@@ -978,9 +988,10 @@ VIEWS.live = async (view) => {
     let alerts = [];
     try { alerts = await api(wsq("/live/alerts?limit=50")); } catch { /* none yet */ }
     const detail = h("div", { class: "card-b" }, h("span", { class: "muted", text: "Select an alert to see why it was flagged and how to verify it." }));
-    const alertT = h("table", { class: "t" }, h("thead", null, h("tr", null, ["Last seen", "Rule", "Technique", "Tactic", "Events", "Batches"].map((c) => h("th", { text: c })))),
+    const alertT = h("table", { class: "t" }, h("thead", null, h("tr", null, ["Last seen", "Detector", "Rule / model", "Technique", "Tactic", "Fused p", "Events", "Batches"].map((c) => h("th", { text: c })))),
       h("tbody", null, alerts.map((a) => h("tr", { class: "click", onclick: () => showExplanation(detail, "alert", a.uid) },
-        [fmtTs(a.ts_last), `${a.rule_id} · ${a.rule_title}`, a.technique_id, a.tactic, fmtN(a.member_count), `${a.first_batch}–${a.last_batch}`].map((c) => h("td", { text: c }))))));
+        h("td", { text: fmtTs(a.ts_last) }), h("td", null, detectorPill(a.rule_id)),
+        [`${a.rule_id} · ${a.rule_title}`, a.technique_id, a.tactic, fmtP(a.p_malicious), fmtN(a.member_count), `${a.first_batch}–${a.last_batch}`].map((c) => h("td", { text: c }))))));
     clear(view).append(h("div", { class: "stack" }, tiles,
       card("Recent batches", `updated ${String(st.updated_at || "").replace("T", " ")} · refreshes every 5 s`, h("button", { class: "btn sm", text: "Knowledge graph", onclick: () => navigate("graph") }), h("div", { class: "card-b flush scroll-x" }, histT)),
       card("Knowledge-base alerts (latest first)", null, null, h("div", { class: "card-b flush scroll-x" }, alertT)),

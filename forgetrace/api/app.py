@@ -655,7 +655,8 @@ def live_alerts(ws: str | None = None, limit: int = 200) -> list[dict[str, Any]]
     if not _has_table(c, "kb_alerts"):
         raise HTTPException(404, "not a live workspace")
     cur = c.execute("""SELECT uid, rule_id, rule_title, technique_id, tactic, severity, ts_first, ts_last, member_count,
-                              first_batch, last_batch FROM kb_alerts ORDER BY ts_last DESC LIMIT ?""", [max(1, min(limit, 2000))])
+                              first_batch, last_batch, p_malicious
+                       FROM kb_alerts ORDER BY ts_last DESC LIMIT ?""", [max(1, min(limit, 2000))])
     cols = [x[0] for x in cur.description]
     return [{k: (str(v) if k.startswith("ts_") else v) for k, v in zip(cols, r)} for r in cur.fetchall()]
 

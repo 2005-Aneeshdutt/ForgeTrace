@@ -28,7 +28,8 @@ def test_alert_explanation_is_verifiable(facts):
     assert "auth_fail" in a["why_flagged"]["condition"] and "30m" in a["why_flagged"]["threshold"]
     assert any(s.startswith("Print the cited lines: sed -n") for s in a["how_to_verify"])
     assert a["benign_explanations"] and a["verification_status"].startswith("all cited lines")
-    assert len(inc["steps"]) == 6 and "linked by" in inc["steps"][1]["linked_from_previous"]
+    rule_steps = [st for st in inc["steps"] if not st["rule_id"].startswith("ML-")]
+    assert len(rule_steps) == 6 and any("linked by" in st["linked_from_previous"] for st in inc["steps"][1:])
 
 
 def test_condition_text():

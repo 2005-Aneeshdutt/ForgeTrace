@@ -56,7 +56,35 @@ def _rules() -> dict:
     return {r.id: r for r in load_rules()}
 
 
+def model_text(rule_id: str) -> dict:
+    """What an ML detector is and when it flags, from config/ml.yml (the model's 'rule')."""
+    from forgetrace.ml.ueba import ml_config
+
+    cfg = ml_config()
+    w = cfg["window_minutes"]
+    if rule_id.startswith("ML-UEBA-"):
+        etype = rule_id.removeprefix("ML-UEBA-")
+        ent, u = cfg["ueba"]["entities"].get(etype, {}), cfg["ueba"]
+        return {"rule": rule_id, "title": f"Unusual behaviour for this {etype.replace('_', ' ')} (behaviour model)",
+                "type": "behaviour model (unsupervised)",
+                "condition": (f"an Isolation Forest scored this {ent.get('field', etype)}'s {w}-minute window among the most unusual: "
+                              f"above the {u['min_score_percentile']}th percentile of all windows and in the top "
+                              f"{u['alerts_per_day']} of its day; each listed feature is above the entity's own usual range (p95)"),
+                "author": "forgetrace-ml", "severity": u["severity"], "prior_confidence": u["prior"]}
+    if rule_id.startswith("ML-LINK-"):
+        etype, lc = rule_id.removeprefix("ML-LINK-"), cfg["link"]
+        return {"rule": rule_id, "title": f"New, out-of-pattern {etype.replace('_', ' ')} link (graph link model)",
+                "type": "graph link model (unsupervised)",
+                "condition": (f"a source with at least {lc['min_src_history']} established destinations reached new ones that at "
+                              f"most {lc['max_peer_reach']:.0%} of its peers (sources sharing its destinations) ever reached, and "
+                              f"opened at least {lc['neighbour_filter']} such links in one {w}-minute window"),
+                "author": "forgetrace-ml", "severity": lc["severity"], "prior_confidence": lc["prior"]}
+    return {"rule": rule_id, "condition": "model definition not found"}
+
+
 def rule_text(rule_id: str) -> dict:
+    if rule_id.startswith("ML-"):
+        return model_text(rule_id)
     r = _rules().get(rule_id)
     if r is None:
         return {"rule": rule_id, "condition": "rule definition not found"}
@@ -109,7 +137,9 @@ def load_alert(con, alert_id: str) -> dict | None:
             return {"id": a["uid"], "rule_id": a["rule_id"], "title": a["rule_title"], "technique_id": a["technique_id"],
                     "technique_name": a["technique_name"], "tactic": a["tactic"], "severity": a["severity"],
                     "ts_first": a["ts_first"], "ts_last": a["ts_last"], "member_count": a["member_count"],
-                    "event_ids": _j(a["sample_event_ids"]), "entities": _j(a["entities"]), "evidence": _j(a["evidence"])}
+                    "event_ids": _j(a["sample_event_ids"]), "entities": _j(a["entities"]), "evidence": _j(a["evidence"]),
+                    "p_malicious": a.get("p_malicious"), "contributions": _j(a.get("contributions")),
+                    "model_reasons": _j(a.get("reasons")) or [] if str(a["rule_id"]).startswith("ML-") else []}
     if _has(con, "alert_groups"):
         cur = con.execute("SELECT * FROM alert_groups WHERE group_id = ?", [alert_id])
         row = cur.fetchone()
@@ -121,8 +151,23 @@ def load_alert(con, alert_id: str) -> dict | None:
                     "technique_id": a["technique_id"], "technique_name": att.get("name"), "tactic": a["tactic"],
                     "severity": a["severity"], "ts_first": a["ts_first"], "ts_last": a["ts_last"],
                     "member_count": len(mem), "event_ids": mem[:50], "entities": a["entities"],
-                    "evidence": a.get("evidence") or []}
+                    "evidence": a.get("evidence") or [], "p_malicious": a.get("p_malicious"),
+                    "contributions": a.get("contributions"), "model_reasons": _model_reasons(con, a)}
     return None
+
+
+def _model_reasons(con, a: dict) -> list[dict]:
+    """Feature-level reasons stored by ML detectors for this group's detections."""
+    if not str(a["rule_id"]).startswith("ML-") or not _has(con, "detections"):
+        return []
+    ids = list(a.get("detection_ids") or [])[:20]
+    if not ids:
+        return []
+    out = []
+    for (r,) in con.execute("SELECT reasons FROM detections WHERE detection_id IN (SELECT unnest(?)) ORDER BY ts_first",
+                            [ids]).fetchall():
+        out += _j(r) or []
+    return out[:12]
 
 
 def data_quality(con, out: Path) -> list[str]:
@@ -196,17 +241,29 @@ def explain_alert(con, out: Path, alert_id: str, evidence_lines: int = 8) -> dic
     who = "; ".join(f"{k} {', '.join(map(str, v[:5]))}{' …' if len(v) > 5 else ''}" for k, v in ents.items()
                     if k in ("user", "target_user", "host", "src_ip", "dst_ip", "domain_name"))
     guide = _guidance(a["technique_id"])
+    reasons = a.get("model_reasons") or []
+    is_model = str(a["rule_id"]).startswith("ML-")
     facts = {
         "kind": "alert", "id": a["id"],
-        "headline": f"{a['title']} — {a['technique_name'] or a['technique_id']} ({a['technique_id']}, {a['tactic']})",
-        "summary": (f"Rule {a['rule_id']} fired: {a['title'].lower()}. It covers {a['member_count']:,} log event(s) "
+        "headline": f"{a['title'] or rt.get('title')} — {a['technique_name'] or a['technique_id']} ({a['technique_id']}, {a['tactic']})",
+        "detector": "model" if is_model else "rule",
+        "summary": (f"{'Model' if is_model else 'Rule'} {a['rule_id']} fired: "
+                    f"{(a['title'] or rt.get('title') or '').lower()}. It covers {a['member_count']:,} log event(s) "
                     f"between {a['ts_first']} and {a['ts_last']} (UTC)" + (f", involving {who}." if who else ".")),
         "when": {"first": str(a["ts_first"]), "last": str(a["ts_last"]), "timezone": "UTC"},
         "entities": ents,
         "why_flagged": {**rt, "observed": a["evidence"][-5:] if isinstance(a["evidence"], list) else [a["evidence"]],
-                        "technique": {"id": a["technique_id"], "name": a["technique_name"], "tactic": a["tactic"]}},
+                        "technique": {"id": a["technique_id"], "name": a["technique_name"], "tactic": a["tactic"]},
+                        **({"model_reasons": [r.get("text") or f"{r.get('feature')} = {r.get('value')} ({r.get('baseline')})"
+                                              for r in reasons],
+                            "technique_basis": "looked up from the top feature in the fixed table config/ml.yml techniques"}
+                           if is_model else {}),
+                        **({"fused_probability": a["p_malicious"], "detector_priors": a.get("contributions")}
+                           if a.get("p_malicious") is not None else {})},
         "evidence": ev,
-        "how_to_verify": [f"Confirm in the raw lines below that: {rt.get('condition')}"]
+        "how_to_verify": ([f"A model flag is a lead, not a verdict: confirm each reason against the raw lines - {t}"
+                           for t in facts_reasons(reasons)] if is_model else [])
+                         + [f"Confirm in the raw lines below that: {rt.get('condition')}"]
                          + ([f"Confirm the threshold: {rt['threshold']}"] if rt.get("threshold") else [])
                          + ([f"Confirm the follow-up: {rt['followed_by']}"] if rt.get("followed_by") else [])
                          + _verify_cmds(ev, ents, _files(out)) + guide["check"],
@@ -217,6 +274,10 @@ def explain_alert(con, out: Path, alert_id: str, evidence_lines: int = 8) -> dic
     }
     facts["facts_hash"] = hashlib.sha256(json.dumps(facts, sort_keys=True, default=str).encode()).hexdigest()
     return facts
+
+
+def facts_reasons(reasons: list[dict]) -> list[str]:
+    return [str(r.get("text") or r.get("feature")) for r in reasons[:5]]
 
 
 def _link_text(reasons: list[dict], dt_s: float | None, score: float | None) -> str:
