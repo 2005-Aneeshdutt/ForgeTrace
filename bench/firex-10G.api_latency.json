@@ -1,0 +1,32 @@
+{
+ "GET /incidents": {
+  "p95_ms": 0.3,
+  "median_ms": 0.2,
+  "calls": 30
+ },
+ "GET /alerts?unlinked=true": {
+  "p95_ms": 7.4,
+  "median_ms": 6.9,
+  "calls": 30
+ },
+ "GET /detections (1000)": {
+  "p95_ms": 12.1,
+  "median_ms": 11.1,
+  "calls": 30
+ },
+ "GET /overview": {
+  "p95_ms": 51.3,
+  "median_ms": 49.5,
+  "calls": 30
+ },
+ "GET /events/{id}/raw (evidence re-read + verify)": {
+  "p95_ms": 23.0,
+  "median_ms": 22.0,
+  "calls": 30
+ },
+ "GET /graph/neighbors?key=ip:10.10.99.1": {
+  "p95_ms": 26.9,
+  "median_ms": 11.8,
+  "calls": 30
+ }
+}
