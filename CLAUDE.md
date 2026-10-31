@@ -1,0 +1,17 @@
+# CLAUDE.md — working rules for ForgeTrace
+
+The dossier has no §25; these rules come from dossier §18 ("Rule for Opus before every work package"), §11–14, and the Phase 1 brief.
+
+- The dossier (`ForgeTrace — Research & Implementation Dossier-2.pdf`) is the architectural authority. Record every threshold or architectural decision as one line in `docs/DECISIONS.md`.
+- Every non-trivial algorithm gets a "why this exists" header comment citing the dossier section.
+- Update `WORKLOG.md` (completed, metrics, open risks, next tasks) at the end of each work package.
+- Never modify the original datasets (`firex-*.log*`, `edr_events.json`). Never read a log file whole; stream line by line.
+- `event_id = (file_id << 48) | byte_offset`; every derived row carries raw event IDs.
+- Detection must never read `threat.*`, `rule.*`, `labels.*`, `event.kind`, `event.severity` (enforced by `tests/test_vendor_ban.py`).
+- No LLM anywhere in detect/label/link/score/decide. Offline only.
+- No hostnames, usernames, IPs or domains hardcoded in code or rules; use `config/field_map.yaml`, `config/rules/*.yml`, `config/assets.yaml`.
+- Ground truth is read only by `tools/score.py`.
+- Render log-derived strings as text in the UI (`textContent`), never as HTML.
+- Report metrics honestly; print N/A with a reason when a metric cannot be computed.
+
+Commands: `make sample`, `make run`, `make score`, `make test`, `make serve`.

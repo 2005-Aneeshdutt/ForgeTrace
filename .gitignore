@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+out/
+# Original datasets: never modified, never committed (large / reference only)
+firex-10G.log
+firex-30G.log.manifest.json
+edr_events.json
+*.pdf
+# Generated dev data (reproducible with `make sample`)
+data/sample/events.log
