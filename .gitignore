@@ -15,3 +15,4 @@ data/sample/events.log
 data/input/*
 !data/input/README.md
 data/bench/
+data/d0/seed_*/

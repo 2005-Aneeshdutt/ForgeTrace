@@ -1,0 +1,285 @@
+{
+ "note": "Regenerate with `python tools/gen_suite.py`; files are byte-identical per seed (sha256 below).",
+ "seeds": {
+  "1": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 24705380,
+   "lines": 35979,
+   "seed": 1,
+   "sha256": "8fde1bf19ee664ad205d18325ec48ee2c29538ea3b28c6ac8fd21ff690a8519e",
+   "split": "tuning"
+  },
+  "10": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2"
+   ],
+   "bytes": 12690674,
+   "lines": 18307,
+   "seed": 10,
+   "sha256": "9794a014ef9b68c0f1728f5820645047a46ed8bc127209d1e51704e3f3f34195",
+   "split": "tuning"
+  },
+  "11": {
+   "attacks": [
+    "A1",
+    "A2",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 19564983,
+   "lines": 29164,
+   "seed": 11,
+   "sha256": "21533e93e88d16af221b34a3bb712735748e5bfe5bad7b514566d8ddc6120aae",
+   "split": "test"
+  },
+  "12": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 14152566,
+   "lines": 19894,
+   "seed": 12,
+   "sha256": "879734b8a4ef48e6e36d1fa35234d3b01f91d08408196809533123f670b1bd7d",
+   "split": "test"
+  },
+  "13": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2"
+   ],
+   "bytes": 12483608,
+   "lines": 17933,
+   "seed": 13,
+   "sha256": "340ce9fdbb10a9e16e069b2e545826effe12f9cd9071d9aa62e910bb347eabeb",
+   "split": "test"
+  },
+  "14": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2"
+   ],
+   "bytes": 22689375,
+   "lines": 33831,
+   "seed": 14,
+   "sha256": "d01859501ca6129d3c6a743273339423df8340c59b27a849c3bf56bb236c91c0",
+   "split": "test"
+  },
+  "15": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 27606480,
+   "lines": 39104,
+   "seed": 15,
+   "sha256": "7aca0efe2538c24ae5b1f0f0e68810a703831745b96805bd4cd2c1e49c276d63",
+   "split": "test"
+  },
+  "16": {
+   "attacks": [
+    "A1",
+    "A2",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 20084994,
+   "lines": 29773,
+   "seed": 16,
+   "sha256": "bd0da01162f4fe82211ab260d54658f2a509aeed0a5cd6a6f80acf7d91a69524",
+   "split": "test"
+  },
+  "17": {
+   "attacks": [
+    "A1",
+    "A2",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 26895599,
+   "lines": 38119,
+   "seed": 17,
+   "sha256": "da2d3e16537498adc9ef331a940b8805243473bcbf8257407bd1279ebf246e89",
+   "split": "test"
+  },
+  "18": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2"
+   ],
+   "bytes": 19365530,
+   "lines": 30715,
+   "seed": 18,
+   "sha256": "d31c255f25c7970026aeab12968e8cef8f1d479cdf8c7ec580c609c27e4bcd77",
+   "split": "test"
+  },
+  "19": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D3"
+   ],
+   "bytes": 17594444,
+   "lines": 26467,
+   "seed": 19,
+   "sha256": "bf545a0664d97cb98995f7094bb2b384c85ee39cad278b6ac3e23fcce907a827",
+   "split": "test"
+  },
+  "2": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 22779432,
+   "lines": 33154,
+   "seed": 2,
+   "sha256": "441d36789f73404609a4e33afc084605813a91b1db3d14f7aea165354be50222",
+   "split": "tuning"
+  },
+  "20": {
+   "attacks": [
+    "A1",
+    "A2",
+    "D1"
+   ],
+   "bytes": 22217848,
+   "lines": 31545,
+   "seed": 20,
+   "sha256": "482f31de7edcc814f2a167ea18a87a88e21297558d073a8ff64cbf73929d5d8c",
+   "split": "test"
+  },
+  "3": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2"
+   ],
+   "bytes": 24666227,
+   "lines": 38464,
+   "seed": 3,
+   "sha256": "3d8e6ce92f30ec262ed1af5d253e71debc61edef63259c712c4b2eeb51a7d176",
+   "split": "tuning"
+  },
+  "4": {
+   "attacks": [
+    "A1",
+    "A2",
+    "D1"
+   ],
+   "bytes": 21148891,
+   "lines": 33180,
+   "seed": 4,
+   "sha256": "ad5d9b9cd5cc9071707b57950bf98d8d6644bc7505d59a503557d69410211727",
+   "split": "tuning"
+  },
+  "5": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 26565944,
+   "lines": 39280,
+   "seed": 5,
+   "sha256": "725de10761b7eaeda47716278c8640cbce999caab0d512f9e6c82514eff8bdda",
+   "split": "tuning"
+  },
+  "6": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1",
+    "D3"
+   ],
+   "bytes": 9831312,
+   "lines": 15336,
+   "seed": 6,
+   "sha256": "39b6b332bee5ca6d6b344d0c1c90a1e3cbae82213e31c2ab6b43004ecde24219",
+   "split": "tuning"
+  },
+  "7": {
+   "attacks": [
+    "A1",
+    "A2",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 26234920,
+   "lines": 37431,
+   "seed": 7,
+   "sha256": "b13bb2a913f43b9780d26de0adadd469e445181e0ea1677bff654dee11964abe",
+   "split": "tuning"
+  },
+  "8": {
+   "attacks": [
+    "A1",
+    "A2",
+    "A3",
+    "D1"
+   ],
+   "bytes": 27069396,
+   "lines": 38582,
+   "seed": 8,
+   "sha256": "119b69bfbadf36fc17ea3656761794d56b811f3fe2493604b6cbcd22975ed6db",
+   "split": "tuning"
+  },
+  "9": {
+   "attacks": [
+    "A1",
+    "A2",
+    "D1",
+    "D2",
+    "D3"
+   ],
+   "bytes": 11881155,
+   "lines": 16830,
+   "seed": 9,
+   "sha256": "f295ec08e5c0c83ce56a98bc6fbd6011b920aac716a3f47c4192b36f02412435",
+   "split": "tuning"
+  }
+ }
+}
