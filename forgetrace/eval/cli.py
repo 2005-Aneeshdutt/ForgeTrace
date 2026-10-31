@@ -30,6 +30,9 @@ HEADLINE = ["step_recall", "label_acc_exact", "label_acc_parent", "ordered_path_
 
 def load_gt(path: Path, dataset: str) -> GroundTruth:
     raw = json.loads(path.read_text())
+    if "incidents" in raw and "log" in raw:  # organisers' firex manifest
+        from forgetrace.datasets.firex.adapter import ground_truth as firex_gt
+        return firex_gt(path)
     if raw.get("attacks") and "decoy" in raw["attacks"][0]:
         return ground_truth_from_legacy(raw, dataset)
     return GroundTruth.model_validate(raw)

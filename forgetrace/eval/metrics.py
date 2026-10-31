@@ -30,6 +30,13 @@ def parent(t: str | None) -> str | None:
     return t.split(".")[0] if t else None
 
 
+def techniques_of(gt_technique: str) -> list[str]:
+    """A ground-truth technique may list alternatives ("T1110.001, T1078") or a chain
+    ("T1595.002 -> T1190 -> ..."); a predicted label is correct if it matches any of them."""
+    import re
+    return [t for t in re.split(r"\s*(?:,|->)\s*", gt_technique.strip()) if t]
+
+
 # ============================================================================ step + attack level
 @dataclass
 class StepResult:
@@ -83,8 +90,9 @@ def score_steps(gt: GroundTruth, step_events: dict[tuple[str, int], set[int]], r
                     r.found, r.found_by, hit = True, "same_host_60s", fb
                     r.predicted = _majority(Counter(d.technique_id for d in fb))
             r.detectors = sorted({d.detector for d in hit})
-            r.label_exact = r.found and r.predicted == s.technique
-            r.label_parent = r.found and parent(r.predicted) == parent(s.technique)
+            alts = techniques_of(s.technique)
+            r.label_exact = r.found and r.predicted in alts
+            r.label_parent = r.found and parent(r.predicted) in {parent(t) for t in alts}
             steps.append(r)
         ar = AttackResult(a.attack_id, a.is_decoy, steps)
         all_ev = set().union(*(r.events for r in steps)) if steps else set()
