@@ -1,6 +1,6 @@
 # ForgeTrace — handover
 
-Status as of **2026-11-01**, at commit `268dcfc` on `main`. This replaces the earlier handover; older versions are in git history.
+Status as of **2026-11-01**, `main` (all pushed). This replaces the earlier handover; older versions are in git history.
 
 This document is for whoever continues the work. Part A covers what the system is and how to run it. Part B covers what is done, Part C what is left and Part D the risks and traps.
 
@@ -48,7 +48,6 @@ An offline security-log investigation engine (hackathon project for CyberForge b
   - Commit as yourself.
   - **No AI co-author trailers** (owner request).
   - Remote: `https://github.com/2005-Aneeshdutt/ForgeTrace`.
-  - **`268dcfc` (the `/live/alerts` fix) is committed locally and not pushed yet.**
   - `AGENTS.md` is untracked and not ours; leave it out of commits.
 
 ### Run it
@@ -135,17 +134,16 @@ Roughly in priority order for the hackathon. P0 = needed for the final checkpoin
 
 ### P0 — before the final checkpoint
 
-1. **Push `268dcfc`** to the remote.
-2. **Dry-run the unseen-dataset workflow.** Pick a log type we have not used (e.g. a public Linux auth/syslog sample, Windows EVTX exported as JSON, or Zeek/Suricata JSON). Then:
+1. **Dry-run the unseen-dataset workflow.** Pick a log type we have not used (e.g. a public Linux auth/syslog sample, Windows EVTX exported as JSON, or Zeek/Suricata JSON). Then:
    1. run `forgetrace run` on it;
    2. read `run_plan.json`;
    3. fix gaps **only** in `config/field_aliases.yaml`, `config/site.yaml` and `config/rules/`;
    4. write down every config edit as a checklist for the event.
 
    This is the most important rehearsal.
-3. **Measure the ML stage on firex-10G**, once, as a sanity check of time and memory (the 50 GB pipeline was measured before ML existed). The stage time is `ml_s` in the run's stage timings. If it is slow, look at the per-entity window SQL and SHAP on the flagged rows.
-4. **Manually review a sample of model flags** on firex-10G with the explanation panel, and tune `ueba.alerts_per_day` / `min_score_percentile` in `config/ml.yml`. The budget of 10 per entity type per day is a guess.
-5. **Rehearse the demo offline:**
+2. **Measure the ML stage on firex-10G**, once, as a sanity check of time and memory (the 50 GB pipeline was measured before ML existed). The stage time is `ml_s` in the run's stage timings. If it is slow, look at the per-entity window SQL and SHAP on the flagged rows.
+3. **Manually review a sample of model flags** on firex-10G with the explanation panel, and tune `ueba.alerts_per_day` / `min_score_percentile` in `config/ml.yml`. The budget of 10 per entity type per day is a guess.
+4. **Rehearse the demo offline:**
    1. `make graph-up`, `make serve`;
    2. run live mode on a folder while copying a large file into it;
    3. show the Live page, then the Knowledge graph, then an explanation;
@@ -202,4 +200,4 @@ Roughly in priority order for the hackathon. P0 = needed for the final checkpoin
 **Open decisions for the owners:**
 1. Whether to obtain the firex-30G logs, to make the manifest ground truth usable.
 2. Whether any PHASE2 P2 item is still expected by the judges (React UI, tus upload, ablation report).
-3. Which unseen-format sample to rehearse with (P0 item 2).
+3. Which unseen-format sample to rehearse with (P0 item 1).
