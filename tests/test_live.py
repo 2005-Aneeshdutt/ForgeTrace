@@ -1,6 +1,7 @@
-"""Live engine (D-82..D-85): micro-batches build the same alerts and correlation edges as one batch run,
+"""Live engine (D-82..D-85): micro-batches build the same rule alerts and correlation edges as one batch run,
 re-running with no new data changes nothing, appended data is processed incrementally, and with Neo4j
-the graph holds the same incidents."""
+the graph holds the same incidents. ML detectors are compared on their own terms: live models learn from
+history only (D-93), so their flags legitimately differ from a batch run that trains on the whole span."""
 from __future__ import annotations
 
 import json
@@ -10,18 +11,23 @@ import duckdb
 from forgetrace.live.engine import LiveEngine
 
 
+RULES_ONLY = "rule_id NOT LIKE 'ML-%'"
+
+
 def _kb(out):
     con = duckdb.connect(str(out / "forgetrace.duckdb"), read_only=True)
-    alerts = sorted(con.execute("SELECT rule_id, aggregate_key FROM kb_alerts").fetchall())
-    edges = con.execute("""SELECT count(*) FROM kb_edges""").fetchone()[0]
+    alerts = sorted(con.execute(f"SELECT rule_id, aggregate_key FROM kb_alerts WHERE {RULES_ONLY}").fetchall())
+    edges = con.execute(f"""SELECT count(*) FROM kb_edges e JOIN kb_alerts a ON a.uid = e.src_uid AND a.{RULES_ONLY}
+                            JOIN kb_alerts b ON b.uid = e.dst_uid AND b.{RULES_ONLY}""").fetchone()[0]
     con.close()
     return alerts, edges
 
 
 def _batch(sample):
     con = duckdb.connect(str(sample["out"] / "forgetrace.duckdb"), read_only=True)
-    groups = sorted(con.execute("SELECT rule_id, aggregate_key FROM alert_groups").fetchall())
-    edges = con.execute("SELECT count(*) FROM edges").fetchone()[0]
+    groups = sorted(con.execute(f"SELECT rule_id, aggregate_key FROM alert_groups WHERE {RULES_ONLY}").fetchall())
+    edges = con.execute(f"""SELECT count(*) FROM edges e JOIN alert_groups a ON a.group_id = e.src_group_id AND a.{RULES_ONLY}
+                            JOIN alert_groups b ON b.group_id = e.dst_group_id AND b.{RULES_ONLY}""").fetchone()[0]
     con.close()
     return groups, edges
 
@@ -76,5 +82,6 @@ def test_live_graph_incidents(sample, tmp_path):
         from forgetrace.graph.loader import clear_workspace
         clear_workspace(s, "pytest_live")
     drv.close()
-    want = sorted([n["rule_id"] for n in p["observed"]["nodes"]] for p in sample["incidents"])
-    assert sorted(sorted(r) for r in incs) == sorted(sorted(w) for w in want) and batches >= 4
+    rules = lambda rs: sorted(r for r in rs if not r.startswith("ML-"))  # noqa: E731
+    want = [[n["rule_id"] for n in p["observed"]["nodes"]] for p in sample["incidents"]]
+    assert sorted(rules(r) for r in incs) == sorted(rules(w) for w in want) and batches >= 4

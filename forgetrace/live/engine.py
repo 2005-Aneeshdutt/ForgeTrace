@@ -27,6 +27,7 @@ import json
 import multiprocessing as mp
 import shutil
 import time
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -103,6 +104,14 @@ class LiveEngine:
             evidence_event_ids JSON, first_batch INT, last_batch INT)""")
         c.execute("""CREATE TABLE IF NOT EXISTS kb_first_seen (rule_id VARCHAR, k VARCHAR, ts TIMESTAMP,
             PRIMARY KEY (rule_id, k))""")
+        for col, typ in (("p_malicious", "DOUBLE"), ("contributions", "JSON"), ("reasons", "JSON"), ("detector", "VARCHAR"),
+                         ("corroborated", "JSON")):
+            c.execute(f"ALTER TABLE kb_alerts ADD COLUMN IF NOT EXISTS {col} {typ}")
+        # ML history: behaviour windows (features per entity window) and first-seen links (D-93)
+        c.execute("""CREATE TABLE IF NOT EXISTS kb_ml_windows (etype VARCHAR, fset VARCHAR, entity VARCHAR, win TIMESTAMP,
+            t0 TIMESTAMP, t1 TIMESTAMP, sample BIGINT[], x DOUBLE[])""")
+        c.execute("""CREATE TABLE IF NOT EXISTS kb_ml_edges (etype VARCHAR, s VARCHAR, d VARCHAR, t0 TIMESTAMP,
+            PRIMARY KEY (etype, s, d))""")
         c.execute("""CREATE TABLE IF NOT EXISTS kb_buckets (rule_id VARCHAR, k VARCHAR, b TIMESTAMP, n BIGINT,
             s DOUBLE, vals VARCHAR[], sample BIGINT[], key_vals VARCHAR[])""")
 
@@ -220,7 +229,8 @@ class LiveEngine:
         long_ = [r for r in enabled if r.type == "threshold" and _rule_span_s(r) > lookback.total_seconds()]
         base = [r for r in enabled if r.type == "baseline"]
         extra = self._long_rules(long_, batch_no, bmax) + self._first_seen(base)
-        det = detect(self.con, short, extra_rows=extra)
+        ml_rows, ml_info = self._ml(run_plan.capability_profile, batch_no, bmin)
+        det = detect(self.con, short, extra_rows=extra + ml_rows)
         # keep only detections that include at least one event of this batch (older ones are already merged)
         self.con.execute("""DELETE FROM detections WHERE detection_id NOT IN (
             SELECT DISTINCT d.detection_id FROM detections d, unnest(d.member_event_ids) u(m)
@@ -232,13 +242,76 @@ class LiveEngine:
                "alerts_updated": len(updated), "edges_added": len(edges),
                "rules": {"short": len(short), "long_window": len(long_), "first_seen": len(base),
                          "disabled": len(run_plan.disabled)},
-               "rule_seconds": det["rule_seconds"]}
+               "rule_seconds": det["rule_seconds"], "ml": ml_info}
         if self.graph:
             from forgetrace.live.graph_sync import sync_batch
 
             out["graph"] = sync_batch(self.con, self.ws, batch_no, updated, edges)
         self._all_events_view()
         return out
+
+    # ------------------------------------------------------------------ ML (behaviour + link models)
+    def _ml(self, fill: dict, batch_no: int, bmin: datetime) -> tuple[list[dict], dict]:
+        """Behaviour and link models on the knowledge base's history (D-93).
+
+        Behaviour: windows that start at or after the batch's window floor are complete in the horizon view
+        (lookback >= window); their features are upserted into kb_ml_windows, models are refit every
+        `retrain_batches` on the stored history and only those new windows are judged, against the training
+        score distribution. Link: first-seen edges persist in kb_ml_edges; only edges first seen in this batch
+        are judged. Nothing is flagged during the warm-up (no baseline yet)."""
+        from forgetrace.ml.link import link_detections
+        from forgetrace.ml.ueba import detections, ml_config, usable_features, window_sql
+
+        cfg = ml_config()
+        if not cfg.get("enabled"):
+            return [], {"skipped": "ML disabled"}
+        lc = cfg["live"]
+        w = int(cfg["window_minutes"])
+        floor = bmin - timedelta(minutes=bmin.minute % w, seconds=bmin.second, microseconds=bmin.microsecond)
+        first = datetime.fromisoformat(str(self.state["first_ts"])) if self.state.get("first_ts") else bmin
+        judge_from = max(floor, first + timedelta(hours=float(lc["warmup_hours"])))
+        feats = usable_features(fill, cfg)
+        fset = ",".join(feats)
+        c = self.con
+        cur: dict[str, list] = {}
+        for etype, ent in cfg["ueba"]["entities"].items():
+            if fill.get(ent["field"], 0) == 0 or len(feats) < 2:
+                continue
+            rows = c.execute(window_sql("events", ent, feats, w, f"ts >= {_lit_ts(floor)}", latest=True)).fetchall()
+            rows = [(r[0], r[1], r[2], r[3], list(r[4]), [float(v or 0) for v in r[5:]]) for r in rows]
+            c.execute("DELETE FROM kb_ml_windows WHERE etype = ? AND win >= ?", [etype, floor])
+            if rows:
+                c.register("_mw", pa.table({"etype": [etype] * len(rows), "fset": [fset] * len(rows),
+                                            "entity": [r[0] for r in rows], "win": [r[1] for r in rows],
+                                            "t0": [r[2] for r in rows], "t1": [r[3] for r in rows],
+                                            "sample": [r[4] for r in rows], "x": [r[5] for r in rows]}))
+                c.execute("INSERT INTO kb_ml_windows SELECT * FROM _mw")
+                c.unregister("_mw")
+            cur[etype] = [r for r in rows if r[1] >= judge_from]
+        c.execute("DELETE FROM kb_ml_windows WHERE win < ?", [bmin - timedelta(days=float(lc["train_days"]))])
+        models = getattr(self, "_ml_models", None)
+        stored = c.execute("SELECT count(*) FROM kb_ml_windows WHERE fset = ?", [fset]).fetchone()[0]
+        if models is None or batch_no - getattr(self, "_ml_trained", 0) >= int(lc["retrain_batches"]) or \
+                stored >= float(lc["retrain_growth"]) * getattr(self, "_ml_fit_size", 0) or getattr(self, "_ml_fset", None) != fset:
+            models, self._ml_trained, self._ml_fset, self._ml_fit_size = {}, batch_no, fset, stored
+        train = {et: [(e, wn, t0, t1, smp, x) for e, wn, t0, t1, smp, x in c.execute(
+                     "SELECT entity, win, t0, t1, sample, x FROM kb_ml_windows WHERE etype = ? AND fset = ?", [et, fset]).fetchall()]
+                 for et in cur if et not in models}
+        u_rows, self._ml_models, u_info = detections(c, None, fill, models=models, min_win=judge_from,
+                                                     cur_rows=cur, train_rows=train, evidence_view="events",
+                                                     anchor_latest=True)
+        history: dict[str, list] = defaultdict(list)
+        for et, s_, d_, t_ in c.execute("SELECT etype, s, d, t0 FROM kb_ml_edges").fetchall():
+            history[et].append((s_, d_, t_))
+        l_rows, new_edges, l_info = link_detections(c, "events", fill, history=history, min_ts=max(bmin, judge_from))
+        for et, es in new_edges.items():
+            if es:
+                c.register("_me", pa.table({"etype": [et] * len(es), "s": [e[0] for e in es], "d": [e[1] for e in es],
+                                            "t0": [e[2] for e in es]}))
+                c.execute("INSERT INTO kb_ml_edges SELECT * FROM _me ON CONFLICT DO NOTHING")
+                c.unregister("_me")
+        return u_rows + l_rows, {"m1_ueba": u_info, "m2_link": l_info, "judged_from": str(judge_from),
+                                 "detections": len(u_rows) + len(l_rows)}
 
     def _site_values(self) -> dict:
         """Learned site values over all hot data (not just the horizon), so they are stable."""
@@ -350,8 +423,15 @@ class LiveEngine:
         for row in found:
             d = dict(zip(cols, row))
             existing.setdefault((d["rule_id"], d["aggregate_key"]), []).append(d)
+        model_reasons = dict(self.con.execute("SELECT detection_id, reasons FROM detections WHERE rule_id LIKE 'ML-%'").fetchall())
+        absorbed: dict[str, dict[str, float]] = {}  # rule detection -> model flags absorbed into it (D-92)
+        for dup_of, rid, conf in self.con.execute("""SELECT duplicate_of, rule_id, confidence FROM detections
+                                                     WHERE rule_id LIKE 'ML-%' AND duplicate_of IS NOT NULL""").fetchall():
+            absorbed.setdefault(dup_of, {})[rid] = float(conf)
         touched: dict[str, dict] = {}
         for i, g in enumerate(groups):
+            g_reasons = [r for d in g["detection_ids"] for r in json.loads(model_reasons.get(d) or "[]")]
+            g_corr = {k: v for d in g["detection_ids"] for k, v in absorbed.get(d, {}).items()}
             n_new = new_counts.get(i, 0)
             if not n_new:
                 continue
@@ -369,6 +449,8 @@ class LiveEngine:
                 a["entities"] = json.dumps(ents)
                 a["evidence"] = json.dumps((json.loads(a["evidence"]) + g["evidence"])[-10:])
                 a["detection_count"] += g["raw_alert_count"]
+                a["reasons"] = json.dumps((json.loads(a.get("reasons") or "[]") + g_reasons)[-12:])
+                a["corroborated"] = json.dumps({**json.loads(a.get("corroborated") or "{}"), **g_corr})
                 a["last_batch"] = batch_no
             else:
                 h = hashlib.sha1(f"{g['rule_id']}|{g['aggregate_key']}|{g['ts_first']}|{g['member_event_ids'][0]}".encode())
@@ -380,7 +462,9 @@ class LiveEngine:
                      "sample_event_ids": json.dumps(g["member_event_ids"][:k_sample]),
                      "entities": json.dumps({k: g["entities"].get(k, [])[:200] for k in ENT}),
                      "evidence": json.dumps(g["evidence"][-10:]), "detection_count": g["raw_alert_count"],
-                     "first_batch": batch_no, "last_batch": batch_no}
+                     "first_batch": batch_no, "last_batch": batch_no, "p_malicious": None, "contributions": "{}",
+                     "reasons": json.dumps(g_reasons[-12:]), "detector": "model" if g["rule_id"].startswith("ML-") else "rule",
+                     "corroborated": json.dumps(g_corr)}
                 existing.setdefault((g["rule_id"], g["aggregate_key"]), []).append(a)
             touched[a["uid"]] = a
         if touched:
@@ -410,10 +494,18 @@ class LiveEngine:
         recent = [dict(zip(cols, r)) for r in self.con.execute("SELECT * FROM kb_alerts WHERE ts_last >= ?", [lo]).fetchall()]
         groups = [self._kb_group(a) for a in recent]
         upd = {a["uid"] for a in updated}
+        from forgetrace.ml.fusion import fuse
+
+        # p_malicious over the correlation window: detectors agreeing on an entity (D-91), incl. absorbed model flags
+        fuse(groups, {a["uid"]: json.loads(a.get("corroborated") or "{}") for a in recent})
+        self.con.register("_fu", pa.table({"uid": [g["group_id"] for g in groups], "p": [g["p_malicious"] for g in groups],
+                                           "c": [json.dumps(g["contributions"]) for g in groups]}))
+        self.con.execute("UPDATE kb_alerts SET p_malicious = _fu.p, contributions = _fu.c FROM _fu WHERE kb_alerts.uid = _fu.uid")
+        self.con.unregister("_fu")
         deg = entity_stats(self.con, groups)
         ipmap = ip_host_map(self.con)
         cand = [e for e in candidate_edges(groups, ipmap, deg, self.con) if e["src_group_id"] in upd or e["dst_group_id"] in upd]
-        kept = prune(cand)
+        kept = prune(cand, {g["group_id"] for g in groups if g["rule_id"].startswith("ML-")})
         gid = {g["group_id"]: g for g in groups}
         _evidence_ids(kept, gid, self.con)
         if kept:
@@ -468,7 +560,9 @@ class LiveEngine:
         prev = json.loads(hist_p.read_text()).get("history", []) if hist_p.exists() else []
         keep = ("batch", "events", "ingest_s", "analyse_s", "detections_in_batch", "alerts_updated", "edges_added",
                 "batch_min_ts", "batch_max_ts")
-        st["history"] = (prev + [{k: res.get(k) for k in keep}])[-500:]
+        row = {k: res.get(k) for k in keep}
+        row["model_detections"] = (res.get("ml") or {}).get("detections")
+        st["history"] = (prev + [row])[-500:]
         hist_p.write_text(json.dumps(st, indent=1, default=str))
 
     def run(self, follow: bool = True, idle_exit: float | None = None) -> dict:
