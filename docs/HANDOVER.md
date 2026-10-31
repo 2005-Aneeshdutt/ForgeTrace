@@ -1,4 +1,48 @@
-# Phase 2 handover — 2026-10-31, 21:45 IST
+# Phase 2 handover
+
+## Update 2026-11-01 (supersedes the status tables below where they differ)
+
+Direction set by the owners and mentor:
+- **Accuracy metrics are paused.** There is no ground truth for the provided firex-10G/50G files; results are checked by **manual verification**, so every output carries a human-verifiable explanation.
+- **Real-time is the target.** Logs arrive continuously (e.g. 2 GB per 5 min) and accumulate to TBs. The system links what arrives now to what came days ago through a growing **Neo4j knowledge graph**.
+- **Nothing dataset-specific is hardcoded.** A new unseen dataset is the final checkpoint.
+
+Built since the first handover (all committed; `make check` = 154 tests):
+
+| Area | Entry point | Notes |
+|---|---|---|
+| Unseen formats | `forgetrace/ingest/parsers.py`, `config/field_aliases.yaml`, `config/site.yaml` | JSON/CEF/syslog/kv/CSV auto-detected; aliases, timestamps, message patterns in config (D-79, D-80) |
+| Router / blind spots | `forgetrace/rules/router.py` → `run_plan.json` | rules disabled when their fields are absent (D-81) |
+| Scale | `forgetrace/ingest/ingest.py`, `reports/scale.md` | 9-worker ingest; firex-10G 194 s, firex-50G ≈ 22 min / 6.0 GB (D-57..D-78) |
+| FortiGate rules | `config/rules/firewall.yml` | 17 behaviour-only rules (no vendor verdicts) |
+| Graph store | `forgetrace/graph/`, `make graph-up` | Neo4j hybrid with Parquet; campaigns = long-range links (D-62..D-70) |
+| **Live engine** | `forgetrace live --watch … --out … --graph` | micro-batches, bucketed long-window rules, persistent knowledge base, accumulating graph, hot/cold tiers (D-82..D-85, docs/wp/LIVE.md) |
+| **Explanations** | `GET /explain/{alert,incident,campaign}/{id}` | condition in English, observed numbers, verified raw lines, sed/grep steps, benign look-alikes (D-86) |
+| **AI summary** | `?llm=true`, needs `OPENROUTER_API_KEY` | restates facts only; pseudonymised, validated, cached, capped (D-87) |
+| **UI** | Live page, Knowledge graph page | timeline graph per incident/campaign, entity explorer, explanation panel, deep link `#/graph/explain:<kind>:<id>` |
+
+To set up on a new machine:
+1. `make setup`, then `make graph-up` (Docker), then `make serve`.
+2. Start live analysis with `python -m forgetrace live --watch data/input --out out/live --graph`.
+3. For the AI summary, `export OPENROUTER_API_KEY=…` before `make serve`.
+
+For a new dataset:
+1. Drop the files into the watched folder.
+2. Check `run_plan.json` for the formats seen, the rules that are disabled, and the learned site values.
+3. Add aliases or message patterns in `config/field_aliases.yaml` if fields are missing.
+4. Set `config/site.yaml` if home countries or the time zone are known.
+
+Still open, from the PHASE2 plan:
+- ML detection (ML-1..ML-5)
+- fusion (FU-2)
+- learned correlation (CO-1..CO-3) and predictive reach (CO-4)
+- vectorised parser (SC-2)
+- memory governor and Prometheus metrics (SC-5)
+- tus upload (UP-1)
+- React UI rewrite (UI-1..UI-4); the vanilla console now has the live and graph views
+- LANL/AIT adapters, which are blocked on data
+
+## Original handover — 2026-10-31, 21:45 IST
 
 This file is for whoever continues Phase 2. Read it alongside `docs/PHASE2.md`, the authoritative plan. **Read PHASE2.md fully before writing code.** It defines the non-negotiable rules, the frozen interfaces, the work packages (WPs), the execution protocol and the milestones. This file covers what is already done, what is in progress and what comes next.
 
