@@ -77,4 +77,4 @@ See `bench/baseline.json` and §6 below (filled in after the 10 GB run).
 
 ## 6. Scale baseline (10 GB, single worker)
 
-Pending — filled in from `bench/baseline.json`.
+In progress at handover (see docs/HANDOVER.md §4). Observed from timestamps: ingest of 10.23 GB / 15.3M lines took ≈ 15.5 min (≈ 11 MB/s, one worker, other load on the machine); detection was still running after 10+ min. Final numbers go in `bench/baseline.json`.

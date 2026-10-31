@@ -25,6 +25,15 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
 ## Follow-up: Pipeline demo page
 - Added `data/demo/demo_events.log` (5 events), `make demo`, `GET /walkthrough`, and an 8-step "Pipeline demo" page showing ingest → normalise/store → detect → aggregate → correlate → graph → path → risk/reach/evidence on real stored output. Every step was checked in headless Chrome. 57 tests pass.
 
+## Phase 2 (docs/PHASE2.md) — 2026-10-31 evening
+
+| WP | Done | Acceptance criterion | Status | Evidence |
+|---|---|---|---|---|
+| STEP 0 | PHASE2.md saved; STATE.md; bench harness; 10 GB baseline | prompt saved verbatim and committed; state + gaps written; 10 GB measured | PASS (py-spy replaced by cProfile: needs root on macOS) | `e6d64a3`, docs/STATE.md, bench/baseline.json |
+| EV-0 | Pydantic models + Arrow schemas; pipeline emits detector/score/reasons, p_malicious/contributions, dataset | "Freeze interfaces … tests for round-trip" | PASS | tests/test_models.py (7 tests) |
+| EV-1 | `forgetrace eval`, metrics schema, bootstrap, multi-seed | "every metric unit-tested on a toy ground truth with a hand-computed answer; writes metrics/<ds>/<exp>.json" | PASS (reach hit@k and time-to-first-incident reported N/A until CO-4/SC-4) | tests/test_eval_metrics.py (12 tests); dev sample equals tools/score.py |
+| EV-2 | 20-seed D0 suite | "Seeds 1–10 tuning, 11–20 test; byte-identical regeneration" | PASS | tests/test_suite.py; data/d0/suite.json |
+
 ## Metrics (make score, seed 7)
 Step recall 100% (11/11) · parent label 100% · sub-technique 81.8% (R008 emits T1021, ground truth T1021.001/.002) · attacks in order 2/2 · false-alarm share 0/2 · run 1.14 s · peak RSS 231.5 MiB.
 The generator, ground truth and rules share an author, so these numbers are optimistic (see README "How to read these numbers").
