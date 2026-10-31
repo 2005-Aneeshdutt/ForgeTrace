@@ -13,3 +13,5 @@ psutil==7.2.2
 hypothesis==6.170.14
 ruff==0.17.3
 neo4j==6.4.1
+scikit-learn==1.9.1
+shap==0.51.0

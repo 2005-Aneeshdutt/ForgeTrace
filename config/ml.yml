@@ -1,0 +1,86 @@
+# Unsupervised, explainable ML detectors (forgetrace/ml/; DECISIONS D-89..D-92). No labels are used anywhere:
+# models learn "normal" from the data itself. Techniques come from the fixed reason->technique table below,
+# never from a model. Every flag carries its top contributing features with the entity's own baseline.
+enabled: true
+random_state: 7                 # deterministic training
+window_minutes: 60              # behaviour is summarised per entity per window
+
+# --- M1: behaviour baselines (UEBA) -------------------------------------------------------------------
+ueba:
+  entities:                     # one model per entity type; `where` keeps the population meaningful at scale
+    user:   {field: user}
+    host:   {field: host}
+    src_ip: {field: src_ip, where: "src_is_external = false OR src_is_external IS NULL"}
+    ext_src: {field: src_ip, where: "src_is_external = true", min_events: 20}   # external sources with real activity
+  features:                     # name: {sql (aggregate over the entity's events in a window), requires: [fields]}
+    # `evidence` selects the events that show a feature (cited to the analyst): `where` filters, `first_of` keeps the
+    # first event per distinct value, `order` ranks (default: time). Members of a flag = evidence of its reasons.
+    events:             {sql: "count(*)", requires: []}
+    distinct_dst_ip:    {sql: "count(DISTINCT dst_ip)", requires: [dst_ip], evidence: {first_of: dst_ip}}
+    distinct_dst_port:  {sql: "count(DISTINCT dst_port)", requires: [dst_port], evidence: {first_of: dst_port}}
+    distinct_hosts:     {sql: "count(DISTINCT host)", requires: [host], evidence: {first_of: host}}
+    distinct_users:     {sql: "count(DISTINCT \"user\")", requires: [user], evidence: {first_of: "\"user\""}}
+    auth_fail:          {sql: "count(*) FILTER (WHERE event_type = 'auth_fail')", requires: [event_type],
+                         evidence: {where: "event_type = 'auth_fail'"}}
+    auth_success:       {sql: "count(*) FILTER (WHERE event_type IN ('auth_success', 'vpn_login'))", requires: [event_type],
+                         evidence: {where: "event_type IN ('auth_success', 'vpn_login')"}}
+    bytes_out:          {sql: "coalesce(sum(bytes_out), 0)", requires: [bytes_out],
+                         evidence: {where: "bytes_out > 0", order: "bytes_out DESC"}}
+    external_dst:       {sql: "count(DISTINCT dst_ip) FILTER (WHERE dst_is_external)", requires: [dst_ip, dst_is_external],
+                         evidence: {where: "dst_is_external", first_of: dst_ip}}
+    distinct_process:   {sql: "count(DISTINCT process)", requires: [process], evidence: {first_of: process}}
+    distinct_domain:    {sql: "count(DISTINCT domain_name)", requires: [domain_name], evidence: {first_of: domain_name}}
+    night_events:       {sql: "count(*) FILTER (WHERE local_hour <= 5)", requires: [local_hour],
+                         evidence: {where: "local_hour <= 5"}}
+    config_changes:     {sql: "count(*) FILTER (WHERE event_type IN ('config_change', 'account_create', 'group_add'))", requires: [event_type],
+                         evidence: {where: "event_type IN ('config_change', 'account_create', 'group_add')"}}
+  n_estimators: 200
+  min_windows: 50               # an entity type needs this many windows before a model is trained
+  min_entity_windows: 3         # an entity needs this much history before its own baseline is used
+  alerts_per_day: 10            # budget per entity type: the most anomalous windows per day (no labels -> a budget)
+  min_score_percentile: 99.0    # and only windows above this percentile of all scores
+  top_features: 3
+  severity: 2
+  prior: 0.5                    # prior confidence used when combining with other detectors
+
+# --- M2: graph link anomaly (lateral movement on the login / connection graph) -------------------------
+link:
+  edges:                        # relationships whose novelty matters; generic expressions over the envelope
+    logon:    {src: "\"user\"", dst: host, where: "event_type IN ('auth_success') AND \"user\" IS NOT NULL AND host IS NOT NULL"}
+    admin_net: {src: src_ip, dst: dst_ip, where: "event_type = 'net_conn' AND src_is_external = false AND dst_is_external = false AND dst_port IN (22, 135, 139, 445, 3389, 5985, 5986)"}
+  warmup_hours: 6               # batch mode: edges first seen in the first min(6 h, 25% of the span) form the baseline
+  min_src_history: 2            # the source must have this many earlier distinct destinations (a known baseline)
+  max_peer_reach: 0.5           # flag only if peers weighing at most this share (Adamic-Adar weights) reached the destination
+  hub_share: 0.5               # destinations reached by more than this share of sources are hubs: ignored for peers
+  neighbour_filter: 2           # keep a novel edge only if its source or destination has >= this many novel edges in the window
+  severity: 3
+  prior: 0.6
+
+# Fixed reason -> ATT&CK mapping (the top contributing feature decides). Never learned.
+techniques:
+  distinct_dst_port: {technique: T1046, tactic: Discovery}
+  distinct_dst_ip:   {technique: T1046, tactic: Discovery}
+  auth_fail:         {technique: T1110, tactic: Credential Access}
+  distinct_users:    {technique: T1110.003, tactic: Credential Access}
+  distinct_hosts:    {technique: T1021, tactic: Lateral Movement}
+  bytes_out:         {technique: T1048, tactic: Exfiltration}
+  external_dst:      {technique: T1071, tactic: Command and Control}
+  distinct_domain:   {technique: T1071, tactic: Command and Control}
+  distinct_process:  {technique: T1059, tactic: Execution}
+  night_events:      {technique: T1078, tactic: Initial Access}
+  auth_success:      {technique: T1078, tactic: Initial Access}
+  config_changes:    {technique: T1098, tactic: Persistence}
+  events:            {technique: T1078, tactic: Initial Access}
+  link:              {technique: T1021, tactic: Lateral Movement}
+
+# Combining evidence (no labels: noisy-OR of detector priors for detections on the same entity within the window)
+fusion:
+  window_minutes: 60
+  max_entity_groups: 10         # entities shared by more alert groups than this are hubs, not agreement
+
+# Live mode: models learn from the knowledge base's history and judge only new data
+live:
+  warmup_hours: 6               # no model flags until this much data has been seen (baselines need history)
+  retrain_batches: 12           # refit behaviour models every N micro-batches on stored windows ...
+  retrain_growth: 1.5           # ... or as soon as stored history is this many times what the models were fitted on
+  train_days: 14                # behaviour history used for training (stored windows older than this are pruned)

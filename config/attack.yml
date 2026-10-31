@@ -56,3 +56,7 @@ techniques:
   T1498.002: {name: Reflection Amplification, parent: T1498, tactics: [Impact]}
   T1499.002: {name: Service Exhaustion Flood, parent: T1499, tactics: [Impact]}
   T1105:     {name: Ingress Tool Transfer, tactics: [Command and Control]}
+  # Parents used by the ML reason table (config/ml.yml)
+  T1048:     {name: Exfiltration Over Alternative Protocol, tactics: [Exfiltration]}
+  T1071:     {name: Application Layer Protocol, tactics: [Command and Control]}
+  T1059:     {name: Command and Scripting Interpreter, tactics: [Execution]}

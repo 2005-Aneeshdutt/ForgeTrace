@@ -49,7 +49,7 @@ def link_and_group(driver, ws: str, max_entity_alerts: int | None = None, min_ta
             RETURN count(r) AS n""", ws=ws, labels=LINK_LABELS, k=k).single()["n"]
         alerts = s.run("""MATCH (a:Alert {ws: $ws})
                           RETURN a.uid AS uid, a.tactic AS tactic, a.technique_id AS tech,
-                                 a.ts_first AS t0, a.ts_last AS t1""", ws=ws).data()
+                                 a.ts_first AS t0, a.ts_last AS t1, a.rule_id AS rule""", ws=ws).data()
         links = s.run("""MATCH (a:Alert {ws: $ws})-[r:LEADS_TO|RELATED]->(b:Alert)
                          RETURN a.uid AS a, b.uid AS b, type(r) AS t, r.gap_s AS gap""", ws=ws).data()
         info = {a["uid"]: a for a in alerts}
@@ -78,7 +78,7 @@ def link_and_group(driver, ws: str, max_entity_alerts: int | None = None, min_ta
         rows = []
         for root, members in comps.items():
             tactics = sorted({info[m]["tactic"] for m in members})
-            if len(members) < 2 or len(tactics) < min_tactics:
+            if len(members) < 2 or len(tactics) < min_tactics or all(str(info[m]["rule"] or "").startswith("ML-") for m in members):
                 continue
             members.sort(key=lambda m: (info[m]["t0"], m))
             rows.append({"members": members, "tactics": tactics,
@@ -122,7 +122,8 @@ def live_incidents(driver, ws: str, min_tactics: int = 2, database: str | None =
     db = database or graph_config()["database"]
     with driver.session(database=db) as s:
         alerts = {a["uid"]: a for a in s.run("""MATCH (a:Alert {ws: $ws}) RETURN a.uid AS uid, a.tactic AS tactic,
-                                                a.ts_first AS t0, a.ts_last AS t1, a.severity AS sev""", ws=ws).data()}
+                                                a.ts_first AS t0, a.ts_last AS t1, a.severity AS sev,
+                                                a.rule_id AS rule""", ws=ws).data()}
         links = s.run("MATCH (a:Alert {ws: $ws})-[:LEADS_TO]->(b:Alert) RETURN a.uid AS a, b.uid AS b", ws=ws).data()
         parent = {u: u for u in alerts}
 
@@ -142,8 +143,8 @@ def live_incidents(driver, ws: str, min_tactics: int = 2, database: str | None =
         rows = []
         for members in comps.values():
             tactics = sorted({alerts[m]["tactic"] for m in members})
-            if len(tactics) < min_tactics:
-                continue
+            if len(tactics) < min_tactics or all(str(alerts[m]["rule"] or "").startswith("ML-") for m in members):
+                continue  # models corroborate; an incident needs a rule detection (D-92)
             members.sort(key=lambda m: (alerts[m]["t0"], m))
             rows.append({"uid": uid(ws, f"incident:{members[0].split(':')[-1]}"), "members": members, "tactics": tactics,
                          "ts_first": alerts[members[0]]["t0"], "ts_last": max(alerts[m]["t1"] for m in members),

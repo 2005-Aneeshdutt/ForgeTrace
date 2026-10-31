@@ -114,8 +114,9 @@ def test_pipeline_emits_frozen_columns(sample):
     con = duckdb.connect(str(sample["out"] / "forgetrace.duckdb"), read_only=True)
     cols = {r[0] for r in con.execute("DESCRIBE detections").fetchall()}
     assert {"detector", "score", "reasons", "member_event_ids", "technique_id", "tactic"} <= cols
-    det, score, reasons = con.execute("SELECT detector, score, reasons FROM detections LIMIT 1").fetchone()
-    assert det.startswith("rule:") and 0 <= score <= 1 and json.loads(reasons)[0]["text"]
+    for det, score, reasons in con.execute("SELECT detector, score, reasons FROM detections").fetchall():
+        assert (det.startswith("rule:") or det in ("m1_ueba", "m2_authgraph")) and 0 <= score <= 1
+        assert json.loads(reasons)[0]["text"]
     gcols = {r[0] for r in con.execute("DESCRIBE alert_groups").fetchall()}
     assert {"p_malicious", "contributions"} <= gcols
     assert "dataset" in {r[0] for r in con.execute("DESCRIBE events").fetchall()}

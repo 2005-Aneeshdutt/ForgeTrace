@@ -308,13 +308,16 @@ def _evidence_ids(edges: list[dict], gid: dict, con: duckdb.DuckDBPyConnection) 
         e["evidence_event_ids"] = sorted(ids)[:200]
 
 
-def prune(edges: list[dict]) -> list[dict]:
+def prune(edges: list[dict], model_groups: set | frozenset = frozenset()) -> list[dict]:
+    """Score threshold, then a greedy top-K degree cap. Edges between rule alerts claim degree first, so model
+    alerts add links but never displace a rule-to-rule link (D-92); without models the order is unchanged."""
     cfg = config.correlation()
     kept = [e for e in edges if e["score"] >= cfg["theta_edge"] and e["score_terms"]["L"] > 0]
     K = cfg["k_degree"]
     out_c, in_c = defaultdict(int), defaultdict(int)
     final = []
-    for e in sorted(kept, key=lambda e: (-e["score"], e["edge_id"])):
+    touches_model = lambda e: e["src_group_id"] in model_groups or e["dst_group_id"] in model_groups  # noqa: E731
+    for e in sorted(kept, key=lambda e: (touches_model(e), -e["score"], e["edge_id"])):
         if out_c[e["src_group_id"]] >= K or in_c[e["dst_group_id"]] >= K:
             e["pruned_reason"] = f"top-K={K} degree cap"
             continue
@@ -411,6 +414,11 @@ def build_incidents(groups: list[dict], edges: list[dict]) -> tuple[list[dict], 
             if gid[v]["tactic"] not in tactics:
                 tactics.append(gid[v]["tactic"])
         ces = edges_of[root]  # same edges, same order as filtering the edge list
+        if cfg.get("incident_requires_rule", True) and all(str(gid[v].get("rule_id", "")).startswith("ML-") for v in members):
+            abstained.append({"group_ids": members, "tactics": tactics, "edge_ids": [e["edge_id"] for e in ces],
+                              "reason": "only behaviour/graph-model alerts; an incident needs at least one rule detection "
+                                        "(models corroborate, D-92)"})
+            continue
         if len(set(tactics)) < cfg["min_distinct_tactics"]:
             abstained.append({"group_ids": members, "tactics": tactics, "edge_ids": [e["edge_id"] for e in ces],
                               "reason": f"only {len(set(tactics))} distinct tactic(s); "
@@ -447,7 +455,7 @@ def correlate(con: duckdb.DuckDBPyConnection) -> dict:
     deg = entity_stats(con, groups)
     ipmap = ip_host_map(con)
     cand = candidate_edges(groups, ipmap, deg, con)
-    kept = prune(cand)
+    kept = prune(cand, {g["group_id"] for g in groups if str(g.get("rule_id", "")).startswith("ML-")})
     _evidence_ids(kept, {g["group_id"]: g for g in groups}, con)  # evidence only for kept edges
     incidents, abstained = build_incidents(groups, kept)
     return {"groups": groups, "candidate_edges": cand, "edges": kept, "incidents": incidents,

@@ -460,13 +460,15 @@ def _duplicates(rows: list[dict]) -> None:
         for j, ms in enumerate(sets):
             for m in ms:
                 holders.setdefault(m, []).append(j)
+        # A rule is never absorbed by a model flag (models corroborate rules, D-92); among rules: Phase 1 order.
+        rank = [(not str(r.get("rule_id", "")).startswith("ML-"), r["severity"], -r["label_priority"], r["detection_id"]) for r in group]
         for i, r in enumerate(group):
-            key = (r["severity"], -r["label_priority"], r["detection_id"])
+            key = rank[i]
             for j in holders.get(r["member_event_ids"][0], []):  # ascending j = Phase 1 scan order
                 if j == i:
                     continue
                 o = group[j]
-                if (o["severity"], -o["label_priority"], o["detection_id"]) > key and sets[i] <= sets[j]:
+                if rank[j] > key and sets[i] <= sets[j]:
                     r["duplicate_of"] = o["detection_id"]
                     break
 

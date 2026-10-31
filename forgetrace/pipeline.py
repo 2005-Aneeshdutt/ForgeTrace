@@ -140,6 +140,16 @@ def reanalyse(out: Path, graph: bool = False, workspace: str | None = None, prog
     return stats
 
 
+def run_ml(con: duckdb.DuckDBPyConnection, fill: dict[str, float]) -> tuple[list[dict], dict]:
+    """Unsupervised ML detectors over the `events` view (batch: trained on the data itself)."""
+    from forgetrace.ml.link import link_detections
+    from forgetrace.ml.ueba import detections as ueba_detections
+
+    u_rows, _, u_info = ueba_detections(con, "events", fill)
+    l_rows, _, l_info = link_detections(con, "events", fill)
+    return u_rows + l_rows, {"m1_ueba": u_info, "m2_link": l_info, "detections": len(u_rows) + len(l_rows)}
+
+
 def analyse(con: duckdb.DuckDBPyConnection, out: Path, stages: dict, report, graph: bool, workspace: str | None,
             manifest_digest: str | None = None, replace_graph: bool = True):
     """Detect -> correlate -> reach -> persist (-> graph) over everything ingested into `out` so far.
@@ -150,13 +160,22 @@ def analyse(con: duckdb.DuckDBPyConnection, out: Path, stages: dict, report, gra
 
     all_rules = load_rules()
     rules, run_plan, cap = route(con, all_rules, dataset=out.name)
-    (out / "run_plan.json").write_text(json.dumps({**run_plan.model_dump(), "data": cap}, indent=1, default=str))
-    det = detect(con, rules)
+    stages["detect_rules_plan_s"] = round(time.perf_counter() - t, 3)
+    t_ml = time.perf_counter()
+    report("ml", 0.84)
+    ml_rows, ml_info = run_ml(con, run_plan.capability_profile)
+    stages["ml_s"] = round(time.perf_counter() - t_ml, 3)
+    (out / "run_plan.json").write_text(json.dumps({**run_plan.model_dump(), "data": cap, "ml": ml_info}, indent=1, default=str))
+    det = detect(con, rules, extra_rows=ml_rows)
     det["run_plan"] = {"enabled": len(run_plan.enabled), "disabled": len(run_plan.disabled)}
     stages["detect_s"] = round(time.perf_counter() - t, 3)
     t = time.perf_counter()
     report("correlate", 0.88)
     res = correlate(con)
+    from forgetrace.ml.fusion import corroborating, fuse
+
+    # p_malicious per alert group: noisy-OR of detectors agreeing on an entity (D-91)
+    fuse(res["groups"], corroborating(con, res["groups"]))
     stages["correlate_s"] = round(time.perf_counter() - t, 3)
     t = time.perf_counter()
     report("reach", 0.93)
