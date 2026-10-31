@@ -30,9 +30,15 @@ def test_rerun_is_deterministic_and_does_not_duplicate(sample, tmp_path):
 
 
 def test_ground_truth_not_imported_by_engine():
+    # Ground truth may be read only by evaluation code (forgetrace/eval) and dataset adapters'
+    # ground_truth() functions (forgetrace/datasets); the detection path must never touch it.
+    allowed = (ROOT / "forgetrace/eval", ROOT / "forgetrace/datasets")
     for p in (ROOT / "forgetrace").rglob("*.py"):
+        if any(a in p.parents for a in allowed):
+            continue
         src = p.read_text()
-        assert "ground_truth" not in src, f"{p} references ground truth"
+        for banned in ("ground_truth", "GroundTruth", "forgetrace.eval", "from forgetrace import eval"):
+            assert banned not in src, f"{p} references {banned}"
 
 
 def test_ui_never_uses_innerhtml():

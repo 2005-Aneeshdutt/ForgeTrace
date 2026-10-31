@@ -332,6 +332,10 @@ def detect(con: duckdb.DuckDBPyConnection, rules: list[Rule]) -> dict:
                 "ts_first": d["ts_first"], "ts_last": d["ts_last"], "member_event_ids": d["members"],
                 "member_count": len(d["members"]), "evidence": d["evidence"],
                 "aggregate_by": rule.aggregate_by,
+                # PHASE2 frozen Detection: rules score with their prior confidence; the reason is the matched condition.
+                "detector": f"rule:{rule.id}", "score": rule.confidence,
+                "reasons": [{"feature": f"rule:{rule.id}", "value": len(d["members"]), "baseline": None,
+                             "contribution": None, "text": d["evidence"]}],
             })
     _duplicates(rows)
     _write(con, rows)
@@ -365,15 +369,16 @@ def _write(con: duckdb.DuckDBPyConnection, rows: list[dict]) -> None:
         rule_author VARCHAR, rule_title VARCHAR, technique_id VARCHAR, technique_name VARCHAR, tactic VARCHAR,
         tactic_ordinal INT, kill_chain_phase VARCHAR, severity INT, confidence DOUBLE, label_priority INT,
         ts_first TIMESTAMP, ts_last TIMESTAMP, member_event_ids BIGINT[], member_count INT,
-        evidence VARCHAR, aggregate_by VARCHAR[], duplicate_of VARCHAR, entities JSON)""")
+        evidence VARCHAR, aggregate_by VARCHAR[], duplicate_of VARCHAR, entities JSON,
+        detector VARCHAR, score DOUBLE, reasons JSON)""")
     rows.sort(key=lambda r: (r["ts_first"], r["rule_id"], r["detection_id"]))
     for r in rows:
-        con.execute("INSERT INTO detections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
+        con.execute("INSERT INTO detections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?)",
                     [r[k] for k in ("detection_id", "rule_id", "rule_version", "rule_author", "rule_title",
                                     "technique_id", "technique_name", "tactic", "tactic_ordinal",
                                     "kill_chain_phase", "severity", "confidence", "label_priority", "ts_first",
                                     "ts_last", "member_event_ids", "member_count", "evidence", "aggregate_by",
-                                    "duplicate_of")])
+                                    "duplicate_of", "detector", "score")] + [dumps(r["reasons"])])
     # Entities: distinct envelope entity values over each detection's member events.
     aggs = ", ".join(f"list(DISTINCT e.\"{f}\" ORDER BY e.\"{f}\") FILTER (WHERE e.\"{f}\" IS NOT NULL) AS \"{f}\""
                      for f in ENTITY_FIELDS)

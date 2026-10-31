@@ -35,6 +35,7 @@ SCHEMA = pa.schema([
     ("domain_name", pa.string()), ("url", pa.string()), ("file_path", pa.string()), ("file_hash", pa.string()),
     ("registry_path", pa.string()), ("registry_value", pa.string()), ("group_name", pa.string()),
     ("bytes_out", pa.int64()), ("bytes_in", pa.int64()), ("vendor_event_code", pa.string()),
+    ("dataset", pa.string()),
 ])
 ERR_SCHEMA = pa.schema([("file_id", pa.int16()), ("byte_offset", pa.int64()), ("line_no", pa.int64()),
                         ("event_id", pa.int64()), ("error", pa.string()), ("preview", pa.string()),
@@ -71,8 +72,9 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000, progress=None) -> dict:
-    """progress(bytes_done, bytes_total) is called about every 20k lines (optional)."""
+def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000, progress=None, dataset: str | None = None) -> dict:
+    """progress(bytes_done, bytes_total) is called about every 20k lines (optional); `dataset`
+    is stamped on every event (PHASE2 frozen Event interface)."""
     out.mkdir(parents=True, exist_ok=True)
     ev_dir = out / "events"
     ev_dir.mkdir(exist_ok=True)
@@ -135,7 +137,7 @@ def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000, progress=No
                     stats["errors"] += 1
                     continue
                 ev.update(event_id=eid, file_id=file_id, byte_offset=start, line_no=line_no,
-                          line_digest=line_digest(content))
+                          line_digest=line_digest(content), dataset=dataset)
                 for n in names:
                     buf[n].append(ev.get(n))
                 stats["events"] += 1

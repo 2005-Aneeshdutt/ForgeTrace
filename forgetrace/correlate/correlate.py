@@ -67,6 +67,8 @@ def aggregate(con: duckdb.DuckDBPyConnection) -> list[dict]:
         g["group_id"] = f"G{i:04d}"
         g["member_count"] = len(g["member_event_ids"])
         g["also_matched"] = []
+        g["p_malicious"] = None   # set by fusion (FU-2); null = rule-only run
+        g["contributions"] = {}
     for d in sorted(secondary, key=lambda d: d["detection_id"]):
         for g in groups:
             if any(prim.get(m) == g["technique_id"] for m in set(d["member_event_ids"]) & set(g["member_event_ids"])):

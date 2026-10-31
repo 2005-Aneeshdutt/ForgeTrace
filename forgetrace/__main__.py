@@ -12,6 +12,7 @@ def main() -> None:
     r = sub.add_parser("run")
     r.add_argument("--input", nargs="+", required=True, help="log files and/or folders (folders are scanned recursively)")
     r.add_argument("--out", default="out")
+    r.add_argument("--dataset", default=None, help="dataset name stamped on every event (e.g. d0, lanl, ait)")
     s = sub.add_parser("serve")
     s.add_argument("--out", default="out")
     s.add_argument("--host", default="127.0.0.1")
@@ -20,7 +21,7 @@ def main() -> None:
     if a.cmd == "run":
         from forgetrace.pipeline import run
 
-        stats = run([Path(p) for p in a.input], Path(a.out))
+        stats = run([Path(p) for p in a.input], Path(a.out), dataset=a.dataset)
         print(json.dumps({k: stats[k] for k in ("stages", "wall_time_s", "peak_rss_bytes", "ingest", "detections",
                                                 "alert_groups", "kept_edges", "incidents", "abstained_components")},
                          indent=1))

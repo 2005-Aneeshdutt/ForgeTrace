@@ -65,7 +65,7 @@ def expand_inputs(paths: list[Path]) -> list[Path]:
     return out
 
 
-def run(inputs: list[Path], out: Path, progress=None) -> dict:
+def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None) -> dict:
     """progress(stage, fraction) is optional; used by the API's background runs."""
     inputs = expand_inputs(inputs)
     report = progress or (lambda stage, frac: None)
@@ -77,7 +77,7 @@ def run(inputs: list[Path], out: Path, progress=None) -> dict:
         db.unlink()
     t = time.perf_counter()
     report("ingest", 0.0)
-    manifest = ingest(inputs, out, progress=lambda d, t: report("ingest", 0.8 * d / max(t, 1)))
+    manifest = ingest(inputs, out, progress=lambda d, t: report("ingest", 0.8 * d / max(t, 1)), dataset=dataset)
     stages["ingest_s"] = round(time.perf_counter() - t, 3)
     con = store.connect(out)
     store.create_views(con, out)
@@ -199,7 +199,7 @@ def persist(con: duckdb.DuckDBPyConnection, res: dict, payloads: list[dict], rul
 
     table("alert_groups", res["groups"], ["group_id", "rule_id", "technique_id", "tactic", "ts_first", "ts_last",
                                           "raw_alert_count", "detection_ids", "member_event_ids", "entities",
-                                          "severity", "also_matched", "aggregate_key"])
+                                          "severity", "also_matched", "aggregate_key", "p_malicious", "contributions"])
     table("edges", res["edges"], ["edge_id", "src_group_id", "dst_group_id", "reasons", "score", "score_terms",
                                   "weighted_terms", "delta_t_s", "evidence_event_ids", "connector_event_id", "kind"])
     table("candidate_edges", res["candidate_edges"], ["edge_id", "src_group_id", "dst_group_id", "score", "score_terms",
