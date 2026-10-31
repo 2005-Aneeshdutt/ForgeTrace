@@ -41,8 +41,10 @@ def _node(n) -> dict[str, Any]:
             "props": {k: (v.iso_format() if hasattr(v, "iso_format") else v) for k, v in d.items() if k not in ("uid", "ws")}}
 
 
-def _rel(r) -> dict[str, Any]:
-    return {"type": r.type, "from": r.start_node.get("uid"), "to": r.end_node.get("uid"),
+def _rel(r, src: str | None = None, dst: str | None = None) -> dict[str, Any]:
+    """A relationship as JSON. A relationship returned without its nodes carries no node properties, so
+    callers pass the endpoint uids explicitly in that case."""
+    return {"type": r.type, "from": src or r.start_node.get("uid"), "to": dst or r.end_node.get("uid"),
             "props": {k: (v.iso_format() if hasattr(v, "iso_format") else v) for k, v in dict(r).items()}}
 
 
@@ -80,9 +82,9 @@ def incident_graph(ws: str, incident_id: int) -> dict[str, Any]:
         for e in r["ents"]:
             nodes.setdefault(e.get("uid"), _node(e))
         edges += [_rel(x) for x in r["invs"]]
-    for r in _run("""MATCH (a:Alert)-[l:LEADS_TO]->(b:Alert) WHERE a.uid IN $ids AND b.uid IN $ids RETURN l""",
-                  ids=alert_uids):
-        edges.append(_rel(r["l"]))
+    for r in _run("""MATCH (a:Alert)-[l:LEADS_TO]->(b:Alert) WHERE a.uid IN $ids AND b.uid IN $ids
+                     RETURN l, a.uid AS f, b.uid AS t""", ids=alert_uids):
+        edges.append(_rel(r["l"], r["f"], r["t"]))
     return {"found": True, "nodes": list(nodes.values()), "edges": edges}
 
 
@@ -170,3 +172,33 @@ def incident_list(ws: str) -> dict[str, Any]:
                           i.max_severity AS max_severity, count(a) AS alerts, collect(a.rule_id)[0..12] AS rules
                    ORDER BY i.ts_first""", ws=ws)
     return {"incidents": [dict(r) for r in rows], "count": len(rows)}
+
+
+def chain_graph(ws: str, label: str, chain_id: str, entities_per_alert: int = 8) -> dict[str, Any]:
+    """Nodes (alerts + the entities they involve) and edges (LEADS_TO / RELATED / INVOLVES) of one incident
+    or campaign, for the knowledge-graph view."""
+    if label not in ("Incident", "Campaign"):
+        raise ValueError("kind must be incident or campaign")
+    rel = "CONTAINS" if label == "Incident" else "INCLUDES"
+    u = chain_id if chain_id.startswith(f"{ws}|") else uid(ws, f"{label.lower()}:{chain_id}")
+    rows = _run(f"""MATCH (c:{label} {{uid: $u}})-[x:{rel}]->(a:Alert)
+                    OPTIONAL MATCH (a)-[i:INVOLVES]->(e)
+                    WITH a, x, collect({{rel: i, e: e}})[0..$k] AS inv
+                    RETURN a, x.order AS step, inv ORDER BY step""", u=u, k=entities_per_alert)
+    if not rows:
+        raise ValueError(f"{label.lower()} {chain_id!r} not found")
+    nodes, edges, ids = {}, [], []
+    for r in rows:
+        a = _node(r["a"])
+        a["props"]["step"] = r["step"]
+        nodes[a["id"]] = a
+        ids.append(a["id"])
+        for item in r["inv"]:
+            if item["e"] is None:
+                continue
+            nodes.setdefault(item["e"].get("uid"), _node(item["e"]))
+            edges.append(_rel(item["rel"], a["id"], item["e"].get("uid")))
+    for r in _run("""MATCH (a:Alert)-[l:LEADS_TO|RELATED]->(b:Alert) WHERE a.uid IN $ids AND b.uid IN $ids
+                     RETURN l, a.uid AS f, b.uid AS t""", ids=ids):
+        edges.append(_rel(r["l"], r["f"], r["t"]))
+    return {"found": True, "kind": label.lower(), "id": u, "nodes": list(nodes.values()), "edges": edges}

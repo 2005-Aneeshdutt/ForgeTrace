@@ -320,8 +320,15 @@ def rules() -> list[dict[str, Any]]:
 def workspaces() -> list[dict[str, Any]]:
     out = []
     for name, d in ws_dirs().items():
+        live = _read_json(d / "live_status.json")
+        if live:  # live workspace: summarised from the engine's status file
+            out.append({"name": name, "analysed": _db_file(d).exists(), "live": True, "runnable": False, "source": None,
+                        "finished_at": live.get("updated_at"), "incidents": None,
+                        "events": (live.get("totals") or {}).get("events"), "files": [], "has_metrics": False,
+                        "alerts": (live.get("knowledge_base") or {}).get("alerts"), "batches": live.get("batches")})
+            continue
         st = _read_json(d / "run_stats.json")
-        out.append({"name": name, "analysed": (d / "forgetrace.duckdb").exists(),
+        out.append({"name": name, "analysed": (d / "forgetrace.duckdb").exists(), "live": False,
                     "runnable": name in SOURCES and not (OUT / "forgetrace.duckdb").exists(),
                     "source": _rel(SOURCES[name]) if name in SOURCES else None,
                     "finished_at": st.get("finished_at") if st else None,
@@ -656,3 +663,8 @@ def live_alerts(ws: str | None = None, limit: int = 200) -> list[dict[str, Any]]
 @app.get("/graph/incidents")
 def graph_incident_list(ws: str | None = None) -> dict[str, Any]:
     return _graph("incident_list", ws or default_ws())
+
+
+@app.get("/graph/chain")
+def graph_chain(kind: str, id: str, ws: str | None = None) -> dict[str, Any]:
+    return _graph("chain_graph", ws or default_ws(), kind.capitalize(), id)

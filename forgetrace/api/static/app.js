@@ -49,6 +49,8 @@ const ICONS = {
   evaluation: ["M9 11l3 3 8-8", "M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"],
   brand: ["M12 3v18", "M5 8l7-5 7 5", "M5 16l7 5 7-5"],
   demo: ["M6 4l14 8-14 8z"],
+  live: ["M2 12h4l3-8 4 16 3-8h6"],
+  graph: ["M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", "M18 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", "M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0", "M8 6h8", "M7 8l4 8", "M17 8l-4 8"],
 };
 
 async function api(path, opts = {}) {
@@ -107,7 +109,7 @@ function barChart(rows, { label = (r) => r.key, value = (r) => r.count, detail =
 
 // ------------------------------------------------------------------ state + routing
 const state = { ws: null, workspaces: [], route: "overview", param: null, job: null, cache: {} };
-const TITLES = { demo: "Pipeline demo", overview: "Overview", incidents: "Incidents", detections: "Detections", sources: "Data sources", rules: "Detection rules", evaluation: "Evaluation" };
+const TITLES = { demo: "Pipeline demo", live: "Live", graph: "Knowledge graph", overview: "Overview", incidents: "Incidents", detections: "Detections", sources: "Data sources", rules: "Detection rules", evaluation: "Evaluation" };
 
 function navigate(route, param) { location.hash = `#/${route}${param ? "/" + param : ""}`; }
 function parseHash() {
@@ -131,6 +133,14 @@ async function render() {
       h("button", { class: "btn primary", onclick: () => navigate("sources"), text: "Go to Data sources" }))));
     return;
   }
+  const wsInfo = state.workspaces.find((w) => w.name === state.ws) || {};
+  if (wsInfo.live && ["overview", "incidents", "detections"].includes(state.route)) {
+    view.append(card("Live workspace", null, null, h("div", { class: "card-b" },
+      h("div", { class: "callout", text: "This workspace is analysed continuously. Its alerts, incidents and campaigns live in the knowledge base and graph." }),
+      h("div", { class: "row-gap" }, h("button", { class: "btn primary", text: "Open Live", onclick: () => navigate("live") }),
+        h("button", { class: "btn", text: "Open Knowledge graph", onclick: () => navigate("graph") })))));
+    return;
+  }
   try {
     await VIEWS[state.route](view);
   } catch (e) {
@@ -149,7 +159,8 @@ async function loadWorkspaces() {
   }
   const sel = clear($("ws-select"));
   for (const w of state.workspaces) {
-    const label = `${w.name}${w.analysed ? ` · ${fmtN(w.incidents)} incident${w.incidents === 1 ? "" : "s"}` : " · not analysed"}`;
+    const label = w.live ? `${w.name} · live · ${fmtN(w.alerts)} alerts` :
+      `${w.name}${w.analysed ? ` · ${fmtN(w.incidents)} incident${w.incidents === 1 ? "" : "s"}` : " · not analysed"}`;
     const o = h("option", { value: w.name, text: label });
     if (w.name === state.ws) o.selected = true;
     sel.append(o);
@@ -872,6 +883,235 @@ async function openEvidence(eid, ws) {
     raw.textContent = evRaw;
   } catch (e) { raw.textContent = String(e.message); badge.append(h("span", { class: "pill bad-pill" }, h("span", { class: "dot" }), "Error")); }
 }
+
+
+// ------------------------------------------------------------------ explanations (human verification)
+function listSection(title, items, mono) {
+  if (!items || !items.length) return null;
+  return h("div", { class: "xsec" }, h("h4", { text: title }),
+    h("ul", { class: "xlist" }, items.map((t) => h("li", { class: mono && /^(Print|Every line)/.test(t) ? "mono small" : "" , text: t }))));
+}
+
+function renderExplanation(box, x) {
+  clear(box);
+  if (x.error) { box.append(h("div", { class: "callout warn", text: x.error })); return; }
+  box.append(h("div", { class: "xhead", text: x.headline }), h("p", { class: "xsum", text: x.summary }));
+  if (x.data_quality && x.data_quality.length) box.append(h("div", { class: "callout warn" }, x.data_quality.map((d) => h("div", { text: d }))));
+  const nar = x.narrative;
+  if (nar) {
+    if (nar.narrative) {
+      box.append(h("div", { class: "xsec ai" }, h("h4", null, h("span", { class: "pill" }, h("span", { class: "dot" }), nar.label || "AI-written summary of verified evidence"),
+        h("span", { class: "muted small", text: ` ${nar.model || ""} · ${nar.status}` })),
+        h("p", { text: nar.narrative.summary }),
+        h("ol", { class: "xlist" }, (nar.narrative.steps || []).map((st) => h("li", { text: `${st.text} (events ${(st.event_ids || []).join(", ")})` })))));
+    } else {
+      box.append(h("div", { class: "callout", text: `AI summary not shown: ${nar.reason || nar.status}. The explanation below is complete without it.` }));
+    }
+  }
+  if (x.why_flagged) {
+    const w = x.why_flagged;
+    box.append(h("div", { class: "xsec" }, h("h4", { text: "Why it was flagged" }),
+      h("div", { class: "kv" },
+        h("div", { class: "k", text: "Rule" }), h("div", { text: `${w.rule} · ${w.title || ""}` }),
+        h("div", { class: "k", text: "Technique" }), h("div", { text: `${w.technique.id} ${w.technique.name || ""} (${w.technique.tactic})` }),
+        h("div", { class: "k", text: "Condition" }), h("div", { class: "mono small", text: w.condition }),
+        w.threshold ? [h("div", { class: "k", text: "Threshold" }), h("div", { text: w.threshold })] : null,
+        w.followed_by ? [h("div", { class: "k", text: "Then" }), h("div", { text: w.followed_by })] : null,
+        w.first_seen ? [h("div", { class: "k", text: "First seen" }), h("div", { text: w.first_seen })] : null,
+        (w.observed || []).length ? [h("div", { class: "k", text: "Observed" }), h("div", null, w.observed.map((o) => h("div", { class: "small", text: o })))] : null)));
+  }
+  if (x.steps) {
+    box.append(h("div", { class: "xsec" }, h("h4", { text: "Steps, in order" }),
+      h("ol", { class: "xsteps" }, x.steps.map((st) => h("li", null,
+        h("div", null, h("strong", { text: st.what }), h("span", { class: "muted small", text: ` · ${st.technique} · ${st.tactic} · ${fmtTs(st.when)} · ${fmtN(st.events)} event(s)` })),
+        h("div", { class: "small", text: st.linked_from_previous }),
+        evidenceList(st.evidence))))));
+  }
+  if (x.evidence) box.append(h("div", { class: "xsec" }, h("h4", { text: "Evidence (raw log lines, re-read and hash-checked)" }), evidenceList(x.evidence)));
+  box.append(listSection("How to verify by hand", x.how_to_verify, true), listSection("What else it could be (rule these out)", x.benign_explanations),
+             listSection("Uncertainties", x.uncertainties));
+}
+
+function evidenceList(ev) {
+  if (!ev || !ev.length) return h("div", { class: "muted small", text: "No raw lines available for this step." });
+  return h("div", { class: "xev" }, ev.map((e) => h("div", { class: "xline" },
+    h("div", { class: "small" }, e.verified ? okPill("verified") : badPill(e.note || "not verified"),
+      h("span", { class: "muted", text: ` ${e.file || "?"} line ${e.line_no ?? "?"} · ` }), evLink(e.event_id, e.display_id || String(e.event_id))),
+    h("pre", { class: "raw small", text: e.raw || "" }))));
+}
+
+async function showExplanation(target, kind, id, withLlm) {
+  clear(target).append(h("div", { class: "muted", text: withLlm ? "Asking for an AI summary of the verified facts…" : "Building explanation…" }));
+  try {
+    const x = await api(wsq(`/explain/${kind}/${encodeURIComponent(id)}${withLlm ? "?llm=true" : ""}`));
+    clear(target).append(h("div", { class: "row-gap" },
+      h("button", { class: "btn sm", text: "AI summary", title: "Optional: restates these facts via OpenRouter (validated, cached)", onclick: () => showExplanation(target, kind, id, true) }),
+      h("button", { class: "btn sm", text: "Copy as text", onclick: () => { navigator.clipboard?.writeText(JSON.stringify(x, null, 2)); toast("Explanation copied"); } })));
+    const body = h("div", { class: "xbox" }); target.append(body); renderExplanation(body, x);
+  } catch (e) { clear(target).append(h("div", { class: "callout warn", text: String(e.message || e) })); }
+}
+
+// ------------------------------------------------------------------ live view
+let liveTimer = null;
+VIEWS.live = async (view) => {
+  const draw = async () => {
+    if (state.route !== "live") { clearInterval(liveTimer); liveTimer = null; return; }
+    let st;
+    try { st = await api(wsq("/live/status")); } catch (e) {
+      clear(view).append(card("Not a live workspace", null, null, emptyState("No live analysis here",
+        "Start one with: forgetrace live --watch <files or folder> --out out/<name> --graph", null)));
+      return;
+    }
+    const kb = st.knowledge_base || {}, t = st.totals || {}, lb = st.last_batch || {};
+    const tiles = h("div", { class: "kpis" }, [
+      ["Batches processed", st.batches, `last: ${fmtN(lb.events)} events`],
+      ["Events ingested", t.events, `${fmtN(t.errors)} parse errors`],
+      ["Knowledge-base alerts", kb.alerts, `${fmtN(kb.tactics)} tactics`],
+      ["Correlation edges", kb.edges, "stored, any batch"],
+      ["Watermark (latest event)", null, fmtTs(st.watermark)],
+      ["Storage tiers", null, Object.entries(st.batch_tiers || {}).map(([k, v]) => `${k}: ${v}`).join(" · ")],
+    ].map(([l, v, sub]) => h("div", { class: "kpi" }, h("div", { class: "label", text: l }), v === null ? null : h("div", { class: "value", text: fmtN(v) }), h("div", { class: "muted small", text: sub }))));
+    const hist = (st.history || []).slice(-15).reverse();
+    const histT = h("table", { class: "t" }, h("thead", null, h("tr", null, ["Batch", "Events", "Ingest s", "Analyse s", "Detections", "Alerts updated", "Edges added", "Event time span"].map((c) => h("th", { text: c })))),
+      h("tbody", null, hist.map((b) => h("tr", null, [b.batch, fmtN(b.events), b.ingest_s, b.analyse_s, fmtN(b.detections_in_batch), fmtN(b.alerts_updated), fmtN(b.edges_added),
+        `${fmtTs(b.batch_min_ts)} → ${fmtTs(b.batch_max_ts)}`].map((c) => h("td", { text: c }))))));
+    let alerts = [];
+    try { alerts = await api(wsq("/live/alerts?limit=50")); } catch { /* none yet */ }
+    const detail = h("div", { class: "card-b" }, h("span", { class: "muted", text: "Select an alert to see why it was flagged and how to verify it." }));
+    const alertT = h("table", { class: "t" }, h("thead", null, h("tr", null, ["Last seen", "Rule", "Technique", "Tactic", "Events", "Batches"].map((c) => h("th", { text: c })))),
+      h("tbody", null, alerts.map((a) => h("tr", { class: "click", onclick: () => showExplanation(detail, "alert", a.uid) },
+        [fmtTs(a.ts_last), `${a.rule_id} · ${a.rule_title}`, a.technique_id, a.tactic, fmtN(a.member_count), `${a.first_batch}–${a.last_batch}`].map((c) => h("td", { text: c }))))));
+    clear(view).append(h("div", { class: "stack" }, tiles,
+      card("Recent batches", `updated ${String(st.updated_at || "").replace("T", " ")} · refreshes every 5 s`, h("button", { class: "btn sm", text: "Knowledge graph", onclick: () => navigate("graph") }), h("div", { class: "card-b flush scroll-x" }, histT)),
+      card("Knowledge-base alerts (latest first)", null, null, h("div", { class: "card-b flush scroll-x" }, alertT)),
+      card("Explanation", null, null, detail)));
+  };
+  await draw();
+  if (!liveTimer) liveTimer = setInterval(draw, 5000);
+};
+
+// ------------------------------------------------------------------ knowledge graph view
+let kg = null;
+const KG_COLORS = { Alert: "--accent", User: "--series-2", Host: "--series-3", IP: "--series-4", Domain: "--series-5", Group: "--series-6" };
+function kgLabel(n) {
+  const p = n.props || {};
+  if (n.label === "Alert") return `${p.step ? p.step + ". " : ""}${p.tactic || ""}\n${p.technique_id || ""} · ${p.rule_id || ""}`;
+  return `${n.label}\n${p.name || p.addr || ""}`;
+}
+function kgPositions(data) {
+  // Chains: alerts left to right in attack order (a timeline); each entity under the first step using it.
+  const alerts = data.nodes.filter((n) => n.label === "Alert").sort((a, b) => (a.props.step || 0) - (b.props.step || 0));
+  if (!alerts.length || !alerts.some((a) => a.props.step)) return null;
+  const pos = {}, col = {}, depth = {};
+  alerts.forEach((a, i) => { pos[a.id] = { x: i * 170, y: (i % 2) * 46 }; col[a.id] = i; });  // slight zig-zag keeps arrows visible
+  for (const e of data.edges.filter((x) => x.type === "INVOLVES").sort((a, b) => col[a.from] - col[b.from])) {
+    if (pos[e.to] || col[e.from] === undefined) continue;
+    const c = col[e.from]; depth[c] = (depth[c] || 0) + 1;
+    pos[e.to] = { x: c * 170 + (depth[c] % 2 ? -38 : 38), y: 110 + depth[c] * 56 };
+  }
+  return pos;
+}
+function kgDraw(box, data, onSelect) {
+  const els = [];
+  const pos = kgPositions(data);
+  for (const n of data.nodes) els.push({ data: { id: n.id, label: kgLabel(n), kind: n.label, raw: n }, ...(pos && pos[n.id] ? { position: pos[n.id] } : {}) });
+  const ids = new Set(data.nodes.map((n) => n.id));
+  // One long-range edge per alert pair (labelled with how many shared entities it stands for), and none
+  // where a windowed LEADS_TO already links the pair: keeps the picture readable without hiding a link.
+  const pair = (e) => [e.from, e.to].sort().join("|");
+  const led = new Set(data.edges.filter((e) => e.type === "LEADS_TO").map(pair));
+  const rel = {};
+  for (const e of data.edges.filter((x) => x.type === "RELATED")) { if (!led.has(pair(e))) (rel[pair(e)] = rel[pair(e)] || []).push(e); }
+  const shown = data.edges.filter((e) => e.type !== "RELATED").concat(Object.values(rel).map((g) => ({ ...g[0], _n: g.length, _all: g })));
+  shown.forEach((e, i) => { if (ids.has(e.from) && ids.has(e.to)) els.push({ data: { id: `e${i}`, source: e.from, target: e.to, type: e.type,
+    label: e.type === "INVOLVES" ? "" : e.type === "LEADS_TO" ? `${Number(e.props.score || 0).toFixed(2)}` : e.type === "RELATED" ? `related${e._n > 1 ? ` ×${e._n}` : ""}` : e.type.toLowerCase(), raw: e } }); });
+  if (kg) kg.destroy();
+  const col = (k) => cssVar(KG_COLORS[k] || "--text-muted") || cssVar("--accent");
+  kg = cytoscape({ container: box, elements: els, wheelSensitivity: 0.3, minZoom: 0.2, maxZoom: 2,
+    layout: pos ? { name: "preset", fit: true, padding: 40 } : { name: "cose", animate: false, nodeRepulsion: 40000, idealEdgeLength: 160, nodeOverlap: 20, padding: 40 },
+    style: [
+      { selector: "node", style: { label: "data(label)", "text-wrap": "wrap", "text-max-width": 140, "font-size": 11, color: cssVar("--text-primary"), "text-valign": "bottom", "text-margin-y": 4,
+        width: 22, height: 22, "background-color": (n) => col(n.data("kind")), "border-width": 1, "border-color": cssVar("--surface-1") } },
+      { selector: "node[kind = 'Alert']", style: { shape: "round-rectangle", width: 30, height: 22, "text-valign": "top", "text-margin-y": -4, "font-weight": 600 } },
+      { selector: "edge", style: { width: 1.5, "line-color": cssVar("--text-muted"), "target-arrow-shape": "triangle", "target-arrow-color": cssVar("--text-muted"),
+        "curve-style": "bezier", label: "data(label)", "font-size": 10, color: cssVar("--text-muted"), opacity: 0.85 } },
+      { selector: "edge[type = 'INVOLVES']", style: { width: 1, "target-arrow-shape": "none", label: "", opacity: 0.45 } },
+      { selector: "edge[type = 'LEADS_TO']", style: { width: 3, "line-color": cssVar("--accent"), "target-arrow-color": cssVar("--accent") } },
+      { selector: "edge[type = 'RELATED']", style: { "line-style": "dashed", width: 2, "line-color": cssVar("--serious"), "target-arrow-color": cssVar("--serious") } },
+      { selector: ":selected", style: { "border-width": 4, "border-color": cssVar("--serious") } },
+    ] });
+  kg.on("tap", "node", (ev) => onSelect("node", ev.target.data("raw")));
+  kg.on("tap", "edge", (ev) => onSelect("edge", ev.target.data("raw")));
+}
+
+function kgDetail(detail, kind, item, wsName) {
+  clear(detail);
+  const props = Object.entries(item.props || {}).filter(([k]) => !["sample_event_ids", "evidence_event_ids", "reasons_json", "score_terms"].includes(k));
+  if (item._all) props.push(["shared entities", item._all.map((x) => String(x.props.via || "").split("|").pop()).join(", ")]);
+  detail.append(h("div", { class: "xhead", text: kind === "node" ? `${item.label} ${item.props.name || item.props.addr || item.props.rule_id || ""}` : `${item.type} relationship` }),
+    h("div", { class: "kv" }, props.map(([k, v]) => [h("div", { class: "k", text: k }), h("div", { class: "small", text: Array.isArray(v) ? v.join(", ") : String(v) })])));
+  const ev = item.props.sample_event_ids || item.props.evidence_event_ids || [];
+  if (ev.length) detail.append(h("div", { class: "small" }, "Evidence: ", ev.slice(0, 8).map((e) => [evLink(e, String(e), wsName), " "])));
+  if (kind === "node" && item.label === "Alert") {
+    const box = h("div");
+    detail.append(h("button", { class: "btn sm primary", text: "Explain this alert", onclick: () => showExplanation(box, "alert", item.props.group_id) }), box);
+  }
+  if (kind === "node" && item.label !== "Alert") {
+    const key = `${item.label.toLowerCase()}:${item.props.name || item.props.addr}`;
+    detail.append(h("button", { class: "btn sm", text: "Explore neighbours", onclick: () => navigate("graph", `explore:${encodeURIComponent(key)}`) }));
+  }
+}
+
+let kgTimer = null;
+VIEWS.graph = async (view) => {
+  let status;
+  try { status = await api("/graph/status"); } catch (e) { status = { available: false, reason: e.message }; }
+  if (!status.available) {
+    view.append(card("Graph store unavailable", null, null, emptyState("Neo4j is not reachable", `${status.reason || ""} — start it with: make graph-up`, null)));
+    return;
+  }
+  const param = state.param ? decodeURIComponent(state.param) : "";
+  const list = h("div", { class: "kg-list" });
+  const gbox = h("div", { id: "kg-graph" });
+  const detail = h("div", { class: "card-b small" }, h("span", { class: "muted", text: "Choose an incident or campaign, or explore an entity. Click any node or edge for details and evidence." }));
+  const search = h("input", { class: "input", placeholder: "Explore: user:alice · ip:10.0.0.5 · host:SRV-01", value: param.startsWith("explore:") ? param.slice(8) : "" });
+  search.addEventListener("keydown", (e) => { if (e.key === "Enter" && search.value.trim()) navigate("graph", `explore:${encodeURIComponent(search.value.trim())}`); });
+  const legend = h("div", { class: "graph-legend" },
+    h("span", null, h("span", { class: "sw node" }), "Alert"), h("span", null, h("span", { class: "sw path" }), "LEADS_TO: windowed correlation (score)"),
+    h("span", null, h("span", { class: "sw related" }), "RELATED: long-range shared entity"), h("span", { class: "muted", text: "Circles: users, hosts, IPs" }));
+  view.append(h("div", { class: "kg-layout" },
+    card("Incidents & campaigns", null, null, h("div", { class: "card-b" }, search), list),
+    h("div", { class: "stack" }, card("Graph", param || "nothing selected", null, gbox, legend), card("Details & explanation", null, null, detail))));
+  const select = (kind, item) => kgDetail(detail, kind, item, state.ws);
+  const fill = async () => {
+    const [inc, camp] = await Promise.all([api(wsq("/graph/incidents")).catch(() => ({ incidents: [] })), api(wsq("/graph/campaigns")).catch(() => ({ campaigns: [] }))]);
+    clear(list).append(...[h("div", { class: "nav-section", text: `Incidents (${inc.incidents.length})` }),
+      inc.incidents.map((i) => h("div", { class: `inc${param === `incident:${i.id}` ? " active" : ""}`, onclick: () => navigate("graph", `incident:${encodeURIComponent(i.id)}`) },
+        h("div", { class: "small", text: (i.tactics || []).join(" → ") }), h("div", { class: "muted small", text: `${i.alerts} alerts · ${fmtTs(i.ts_first)}` }))),
+      h("div", { class: "nav-section", text: `Campaigns (${camp.campaigns.length})` }),
+      camp.campaigns.map((c) => h("div", { class: `inc${param === `campaign:${c.campaign_id}` ? " active" : ""}`, onclick: () => navigate("graph", `campaign:${c.campaign_id}`) },
+        h("div", { class: "small", text: (c.tactics || []).join(" → ") }),
+        h("div", { class: "muted small", text: `${c.alerts.length} alerts${c.long_range ? ` · long-range (gap ${(c.max_related_gap_s / 3600).toFixed(1)} h)` : ""}` })))].flat());
+  };
+  await fill();
+  try {
+    if (param.startsWith("incident:") || param.startsWith("campaign:")) {
+      const [kind, ...rest] = param.split(":"); const id = rest.join(":");
+      const g = await api(wsq(`/graph/chain?kind=${kind}&id=${encodeURIComponent(id)}`));
+      kgDraw(gbox, g, select);
+      const box = h("div"); clear(detail).append(h("button", { class: "btn sm primary", text: `Explain this ${kind}`, onclick: () => showExplanation(box, kind, id) }), box);
+    } else if (param.startsWith("explain:")) {  // deep link: #/graph/explain:<alert|incident|campaign>:<id>
+      const [, kind, ...rest] = param.split(":");
+      await showExplanation(detail, kind, rest.join(":"));
+    } else if (param.startsWith("explore:")) {
+      const g = await api(wsq(`/graph/neighbors?key=${encodeURIComponent(param.slice(8))}&limit=150`));
+      if (!g.found) clear(detail).append(h("div", { class: "callout warn", text: `No entity ${param.slice(8)} in this workspace's graph.` }));
+      else kgDraw(gbox, g, select);
+    }
+  } catch (e) { clear(detail).append(h("div", { class: "callout warn", text: `${String(e.message || e)} — it may have been merged or renumbered by a newer batch; pick it again from the list.` })); }
+  clearInterval(kgTimer);
+  if ((state.workspaces.find((w) => w.name === state.ws) || {}).live) kgTimer = setInterval(() => { if (state.route === "graph") fill(); else clearInterval(kgTimer); }, 10000);
+};
 
 // ------------------------------------------------------------------ boot
 async function switchWs(name) { state.ws = name; store.set("ft.ws", name); await loadWorkspaces(); render(); }
