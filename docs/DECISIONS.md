@@ -14,3 +14,6 @@
 - D-11 `line_digest` = SHA-256 hex of the raw line bytes without the trailing newline (dossier §13 suggests xxhash64, which is not in the approved stack; §3 names SHA-256).
 - D-12 `event_id = (file_id << 48) | byte_offset`, file_id assigned 1..n by sorted input path; ground truth is generated with file_id=1 because the sample is a single file; scorer matches on line_no and also checks event_ids.
 - D-13 Envelope additions beyond §13 forced by the scenarios: `host_ip`, `src_is_external`, `registry_path`, `registry_value`, `group_name`, `parent_process`, `byte_offset`, `line_no`, `raw_format`, `source_event_id`.
+- D-14 Canonical user = lower-case bare account (domain stripped into `user_domain`) so `user` and `target_user` compare directly; dossier §11 suggests `domain\user`, but the dev data is single-domain.
+- D-15 Ingest is single-process streaming (readline, 200k-row Parquet batches, zstd, 128k row groups); byte-range workers deferred to Phase 2.
+- D-16 FortiGate key=value parser included in field_map/parsers so firex lines normalise, but full-tier runs are Phase 2.

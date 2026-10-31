@@ -1,0 +1,116 @@
+# Vendor field -> envelope (dossier §13) mapping. Each envelope field lists source paths
+# tried in order (first non-empty wins). Schema adaptations live ONLY in this file.
+# Vendor verdict fields (threat.*, rule.*, labels*, event.kind, event.severity) are deliberately
+# never mapped: they cannot reach the envelope and therefore cannot reach detection.
+
+internal_networks: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "fc00::/7"]
+max_line_bytes: 1048576
+command_line_max: 2048
+
+formats:
+  ecs_json:            # SimEDR / edr_events.json shape (one JSON object per line)
+    source_type: edr
+    timestamp: {field: "@timestamp", kind: iso8601}
+    fields:
+      source_event_id: [event.id]
+      action: [event.action]
+      outcome: [event.outcome]
+      user: [user.name]
+      user_domain: [user.domain]
+      target_user: [user.target.name]
+      host: [host.name, host.hostname]
+      host_ip: [host.ip]
+      src_ip: [source.ip]
+      src_port: [source.port]
+      dst_ip: [destination.ip, dns.resolved_ip]
+      dst_port: [destination.port]
+      domain_name: [destination.domain, dns.question.name]
+      protocol: [network.transport]
+      process: [process.name]
+      parent_process: [process.parent.name]
+      pid: [process.pid]
+      command_line: [process.command_line]
+      file_path: [file.path]
+      file_hash: [process.hash.sha256, file.hash.sha256]
+      registry_path: [registry.path]
+      registry_value: [registry.data.strings]
+      group_name: [group.name]
+      vendor_event_code: [winlog.event_id]
+      logon_type: [winlog.logon.type]
+      logon_id: [winlog.logon.id]
+      bytes_out: [source.bytes, network.bytes]
+      bytes_in: [destination.bytes]
+      url: [url.full]
+
+  cef:                 # ArcSight CEF; csN/cnN resolved through their *Label keys
+    source_type: edr_cef
+    timestamp: {field: rt, kind: epoch_ms}
+    label_fields:      # value of csNLabel / cnNLabel -> envelope field
+      CommandLine: command_line
+      ParentProcess: parent_process
+      RegistryPath: registry_path
+      RegistryValue: registry_value
+      GroupName: group_name
+      LogonType: logon_type
+      LogonId: logon_id
+      WinEventId: vendor_event_code
+    fields:
+      source_event_id: [externalId]
+      action: [act]
+      outcome: [outcome]
+      user: [suser]
+      user_domain: [sntdom]
+      target_user: [duser]
+      host: [dvchost, shost]
+      host_ip: [dvc]
+      src_ip: [src]
+      src_port: [spt]
+      dst_ip: [dst]
+      dst_port: [dpt]
+      domain_name: [destinationDnsDomain, dhost]
+      protocol: [proto]
+      process: [sproc]
+      bytes_out: [out]
+      bytes_in: [in]
+      url: [request]
+
+  fortigate_kv:        # firex-*.log (FortiGate key=value). Not used by the dev sample.
+    source_type: firewall
+    timestamp: {field: eventtime, kind: epoch_auto, fallback: [date, time, tz]}
+    fields:
+      action: [action]
+      outcome: [status]
+      user: [user]
+      src_ip: [srcip]
+      src_port: [srcport]
+      dst_ip: [dstip]
+      dst_port: [dstport]
+      protocol: [proto]
+      domain_name: [hostname]
+      url: [url]
+      bytes_out: [sentbyte]
+      bytes_in: [rcvdbyte]
+      vendor_event_code: [logid]
+      fw_type: [type]
+      fw_subtype: [subtype]
+      session_id: [sessionid]
+
+# Canonical event_type (dossier §13). First matching rule wins; conditions are ANDed.
+event_types:
+  - {when: {vendor_event_code: ["4625"]}, type: auth_fail}
+  - {when: {vendor_event_code: ["4624"]}, type: auth_success}
+  - {when: {vendor_event_code: ["4720"]}, type: account_create}
+  - {when: {vendor_event_code: ["4728", "4732", "4756"]}, type: group_add}
+  - {when: {action: [user_logon], outcome: [failure]}, type: auth_fail}
+  - {when: {action: [user_logon], outcome: [success]}, type: auth_success}
+  - {when: {action: [process_created]}, type: proc_start}
+  - {when: {action: [network_connection]}, type: net_conn}
+  - {when: {action: [dns_query]}, type: dns_query}
+  - {when: {action: [registry_value_set]}, type: registry_set}
+  - {when: {action: [file_modified, file_rename, file_created]}, type: file_write}
+  - {when: {fw_type: [traffic]}, type: net_conn}
+  - {when: {fw_subtype: [dns]}, type: dns_query}
+  - {when: {fw_subtype: [webfilter]}, type: http_req}
+  - {when: {fw_subtype: [system], action: [login], outcome: [failed]}, type: auth_fail}
+  - {when: {fw_subtype: [system], action: [login], outcome: [success]}, type: auth_success}
+  - {when: {fw_subtype: [system]}, type: config_change}

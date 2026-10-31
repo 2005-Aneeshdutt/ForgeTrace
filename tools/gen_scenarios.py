@@ -65,7 +65,8 @@ class Gen:
                 h = f"WS-{dept}-{10 + i:03d}"
                 self.hosts[h] = (f"10.10.{idx}.{10 + i}", "Windows 11 Enterprise 23H2")
                 self.home[u] = h
-        self.home[IT_ADMIN] = "WS-ENG-013"
+        self.hosts["WS-IT-010"] = ("10.10.5.10", "Windows 11 Enterprise 23H2")
+        self.home[IT_ADMIN] = "WS-IT-010"
         self.all_users = [u for d in USERS.values() for u in d]
         # Fixed baseline access pairs (user -> servers they log on to normally).
         self.server_access: dict[str, list[str]] = {}
