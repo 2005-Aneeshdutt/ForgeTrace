@@ -1,0 +1,14 @@
+# Reachability / containment (dossier §14). Weights are the dossier defaults.
+hop_limit: 4                 # max graph edges from the compromised set (dossier H = 4)
+min_reach: 0.3               # report assets with reach >= 0.3
+lookback_s: 604800           # CREDENTIAL_EXPOSURE / observed admin logon lookback: 7 days
+weights:
+  observed_admin_to: 1.0     # interactive/RDP logon of account on host seen in logs
+  observed_member_of: 1.0    # account added to a host's local admin group (4732 etc.) seen in logs
+  configured: 0.7            # fixture ADMIN_TO / MEMBER_OF / GROUP_ADMIN_TO
+  credential_exposure: 0.5   # account had an interactive session on a controlled host
+  suspected_start: 0.5       # compromised-set member with one weak signal
+admin_logon_types: [interactive, remoteinteractive]
+exposure_logon_types: [interactive, remoteinteractive]
+local_admin_groups: [administrators]
+disclaimer: "Based on observed telemetry and configured asset relationships, this action reduces modelled reachable critical assets from {X} to {Y}. This is a reachability estimate, not a guarantee of prevention."
