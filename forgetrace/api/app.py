@@ -654,8 +654,10 @@ def live_alerts(ws: str | None = None, limit: int = 200) -> list[dict[str, Any]]
     c = con(name)
     if not _has_table(c, "kb_alerts"):
         raise HTTPException(404, "not a live workspace")
-    cur = c.execute("""SELECT uid, rule_id, rule_title, technique_id, tactic, severity, ts_first, ts_last, member_count,
-                              first_batch, last_batch, p_malicious
+    have = {r[0] for r in c.execute("DESCRIBE kb_alerts").fetchall()}
+    p_col = "p_malicious" if "p_malicious" in have else "NULL AS p_malicious"  # knowledge bases built before D-93
+    cur = c.execute(f"""SELECT uid, rule_id, rule_title, technique_id, tactic, severity, ts_first, ts_last, member_count,
+                              first_batch, last_batch, {p_col}
                        FROM kb_alerts ORDER BY ts_last DESC LIMIT ?""", [max(1, min(limit, 2000))])
     cols = [x[0] for x in cur.description]
     return [{k: (str(v) if k.startswith("ts_") else v) for k, v in zip(cols, r)} for r in cur.fetchall()]
