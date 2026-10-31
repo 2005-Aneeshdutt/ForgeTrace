@@ -153,11 +153,11 @@ Roughly in priority order for the hackathon. P0 = needed for the final checkpoin
 
 ### P1 — quality and robustness
 
-6. **Persist live models.** Live mode keeps fitted models in memory, so a restart refits from `kb_ml_windows`. This is fine, but the first batch after a restart is slower. Pickle the models to `out/<ws>/ml_models/` with the feature-set hash.
-7. **Timestamp clamp on firex** (D-61, D-74): 69% of firex-10G events share one pinned timestamp. This inflates R001/F002 groups and limits what time-based models can learn on that file. The firex-10G file is also binary beyond about 4.8 GB (D-06). Decide whether to report this as a data-quality finding (the explanation's `data_quality` list already flags it) or to tune the affected rules.
-8. **Live alert filtering:** `/live/alerts` returns the latest 50; add filters by detector, tactic and entity.
-9. **Neo4j growth to TB-scale history.** Raw events never go to Neo4j, only aggregated relationships and alerts, which is fine. But there is no TTL or compaction yet for very old Batch markers or RELATED edges. Add a periodic cleanup job if the demo runs for days.
-10. **Memory governor and `/metrics` (SC-5)**: bounded queues; drop workers when RSS > 7 GB; Prometheus text endpoint.
+5. **Persist live models.** Live mode keeps fitted models in memory, so a restart refits from `kb_ml_windows`. This is fine, but the first batch after a restart is slower. Pickle the models to `out/<ws>/ml_models/` with the feature-set hash.
+6. **Timestamp clamp on firex** (D-61, D-74): 69% of firex-10G events share one pinned timestamp. This inflates R001/F002 groups and limits what time-based models can learn on that file. The firex-10G file is also binary beyond about 4.8 GB (D-06). Decide whether to report this as a data-quality finding (the explanation's `data_quality` list already flags it) or to tune the affected rules.
+7. **Live alert filtering:** `/live/alerts` returns the latest 50; add filters by detector, tactic and entity.
+8. **Neo4j growth to TB-scale history.** Raw events never go to Neo4j, only aggregated relationships and alerts, which is fine. But there is no TTL or compaction yet for very old Batch markers or RELATED edges. Add a periodic cleanup job if the demo runs for days.
+9. **Memory governor and `/metrics` (SC-5)**: bounded queues; drop workers when RSS > 7 GB; Prometheus text endpoint.
 
 ### P2 — PHASE2 items not done (decide whether they still matter)
 
