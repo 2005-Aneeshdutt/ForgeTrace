@@ -301,3 +301,53 @@ def _err(errs, file_id, start, line_no, msg, content):
     errs["error"].append(msg[:500])
     errs["preview"].append(content[:200].decode("utf-8", "replace"))
     errs["line_digest"].append(line_digest(content))
+
+
+def ingest_batch(path: Path, file_id: int, start: int, end: int, base_line: int, out: Path, pool, batch: int,
+                 dataset: str | None = None, range_bytes: int = RANGE_BYTES) -> dict:
+    """Ingest one line-aligned byte range [start, end) of a file into an existing workspace (streaming,
+    forgetrace/stream.py). Same per-range workers as `ingest`; parts are named by batch so earlier
+    batches are never rewritten. Line numbers continue from `base_line`."""
+    ev_dir, err_dir = out / "events", out / "parse_errors"
+    ev_dir.mkdir(parents=True, exist_ok=True)
+    err_dir.mkdir(exist_ok=True)
+    max_line = config.field_map()["max_line_bytes"]
+    sub = [(s + start, e + start) for s, e in _plan_slice(path, start, end, range_bytes)]
+    mapper = pool.map if pool else map
+    counts = list(mapper(_count_lines, [(str(path), s, e) for s, e in sub]))
+    jobs, base = [], base_line
+    for i, ((s, e), c) in enumerate(zip(sub, counts)):
+        jobs.append({"range_index": i, "file_id": file_id, "path": str(path), "start": s, "end": e,
+                     "base_line": base, "max_line": max_line, "batch_rows": WORKER_BATCH_ROWS, "dataset": dataset,
+                     "events_path": str(ev_dir / f"part-{file_id:03d}-b{batch:04d}-{i:05d}.parquet"),
+                     "errors_path": str(err_dir / f"part-{file_id:03d}-b{batch:04d}-{i:05d}.parquet")})
+        base += c
+    stats = {"lines": 0, "events": 0, "errors": 0, "empty": 0}
+    for r in mapper(_ingest_range, jobs):
+        for k in stats:
+            stats[k] += r[k]
+    if not any(err_dir.glob("*.parquet")):
+        pq.write_table(pa.Table.from_pydict({n: [] for n in ERR_SCHEMA.names}, schema=ERR_SCHEMA),
+                       err_dir / "part-none.parquet")
+    stats["ranges"] = len(jobs)
+    return stats
+
+
+def _plan_slice(path: Path, start: int, end: int, range_bytes: int) -> list[tuple[int, int]]:
+    """Line-aligned sub-ranges of [start, end), relative to start (start and end are line starts)."""
+    cuts = [0]
+    size = end - start
+    with open(path, "rb") as f:
+        pos = range_bytes
+        while pos < size:
+            f.seek(start + pos - 1)
+            if f.read(1) != b"\n":
+                f.readline()
+            nxt = f.tell() - start
+            if nxt >= size:
+                break
+            if nxt > cuts[-1]:
+                cuts.append(nxt)
+            pos = max(nxt, pos) + range_bytes
+    cuts.append(size)
+    return list(zip(cuts[:-1], cuts[1:]))

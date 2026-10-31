@@ -88,6 +88,30 @@ def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None
     stages["ingest_s"] = round(time.perf_counter() - t, 3)
     con = store.connect(out)
     store.create_views(con, out)
+    det, res, payloads, graph_stats = analyse(con, out, stages, report, graph, workspace,
+                                              manifest_digest=manifest["manifest_digest"])
+    con.close()
+    (out / "incidents.json").write_text(dumps(payloads))
+    stats = {"stages": stages, "wall_time_s": round(time.perf_counter() - t0, 3), "peak_rss_bytes": peak_rss_bytes(),
+             "peak_rss_note": "ru_maxrss of the main process; parallel ingest workers are child processes "
+                             "(tools/bench.py samples the whole process tree)",
+             "config_hash": config.config_hash(), "code_version": config.CODE_VERSION,
+             "dataset": {"files": manifest["files"], "manifest_digest": manifest["manifest_digest"]},
+             "ingest": manifest["stats"], "ingest_parallel": manifest.get("parallel"),
+             "detections": det["detections"], "rule_seconds": det["rule_seconds"],
+             "alert_groups": len(res["groups"]), "candidate_edges": len(res["candidate_edges"]),
+             "kept_edges": len(res["edges"]), "incidents": len(payloads), "abstained_components": len(res["abstained"]),
+             "graph": graph_stats if graph else {"skipped": "graph step not requested (--graph or FORGETRACE_GRAPH=1)"}}
+    stats["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    (out / "run_stats.json").write_text(json.dumps(stats, indent=1, default=str))
+    report("done", 1.0)
+    return stats
+
+
+def analyse(con: duckdb.DuckDBPyConnection, out: Path, stages: dict, report, graph: bool, workspace: str | None,
+            manifest_digest: str | None = None, replace_graph: bool = True):
+    """Detect -> correlate -> reach -> persist (-> graph) over everything ingested into `out` so far.
+    Shared by the batch run and the streaming mode (forgetrace/stream.py)."""
     t = time.perf_counter()
     report("detect", 0.82)
     rules = load_rules()
@@ -111,27 +135,12 @@ def run(inputs: list[Path], out: Path, progress=None, dataset: str | None = None
 
         t = time.perf_counter()
         report("graph", 0.96)
-        graph_stats = graph_load(con, workspace or out.name, {"workspace": workspace or out.name,
-                                                               "config_hash": config.config_hash(),
-                                                               "manifest_digest": manifest["manifest_digest"]},
+        ws = workspace or out.name
+        graph_stats = graph_load(con, ws, {"workspace": ws, "config_hash": config.config_hash(),
+                                           "manifest_digest": manifest_digest or ""},
                                  progress=lambda step, done, total: report(f"graph:{step}", 0.96 + 0.03 * done / max(total, 1)))
         stages["graph_s"] = round(time.perf_counter() - t, 3)
-    con.close()
-    (out / "incidents.json").write_text(dumps(payloads))
-    stats = {"stages": stages, "wall_time_s": round(time.perf_counter() - t0, 3), "peak_rss_bytes": peak_rss_bytes(),
-             "peak_rss_note": "ru_maxrss of the main process; parallel ingest workers are child processes "
-                             "(tools/bench.py samples the whole process tree)",
-             "config_hash": config.config_hash(), "code_version": config.CODE_VERSION,
-             "dataset": {"files": manifest["files"], "manifest_digest": manifest["manifest_digest"]},
-             "ingest": manifest["stats"], "ingest_parallel": manifest.get("parallel"),
-             "detections": det["detections"], "rule_seconds": det["rule_seconds"],
-             "alert_groups": len(res["groups"]), "candidate_edges": len(res["candidate_edges"]),
-             "kept_edges": len(res["edges"]), "incidents": len(payloads), "abstained_components": len(res["abstained"]),
-             "graph": graph_stats if graph else {"skipped": "graph step not requested (--graph or FORGETRACE_GRAPH=1)"}}
-    stats["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
-    (out / "run_stats.json").write_text(json.dumps(stats, indent=1, default=str))
-    report("done", 1.0)
-    return stats
+    return det, res, payloads, graph_stats
 
 
 def build_payloads(con: duckdb.DuckDBPyConnection, res: dict) -> list[dict]:

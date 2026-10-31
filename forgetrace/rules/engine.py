@@ -247,11 +247,17 @@ def compile_rule(rule: Rule) -> dict[str, str]:
     if rule.type == "threshold":
         keys = ", ".join(f'"{k}"' for k in rule.group_by)
         wl = "".join(f', lower("{v}") AS "_w_{v}"' for v in (rule.followed_by.link.values() if rule.followed_by else []))
+        # Only groups whose window metric reaches the threshold at least once can produce a detection,
+        # so the rest never leave DuckDB (on firex-10G this keeps millions of rows out of Python).
+        link_cols = "".join(f', "_w_{v}"' for v in (rule.followed_by.link.values() if rule.followed_by else []))
+        not_null = " AND ".join(f'"{k}" IS NOT NULL' for k in rule.group_by)
         sql["threshold"] = (
+            f"SELECT event_id, ts, {keys}{link_cols}, win_count FROM ("
             f"SELECT event_id, ts, {keys}{wl}, {rule.threshold.sql()} OVER (PARTITION BY {keys} ORDER BY ts "
             f"RANGE BETWEEN INTERVAL {rule.threshold.seconds} SECOND PRECEDING AND CURRENT ROW) AS win_count "
-            f"FROM events WHERE {where} AND " + " AND ".join(f'"{k}" IS NOT NULL' for k in rule.group_by)
-            + f" ORDER BY {keys}, ts, event_id")
+            f"FROM events WHERE {where} AND {not_null}"
+            f") QUALIFY max(win_count) OVER (PARTITION BY {keys}) >= {rule.threshold.value} "
+            f"ORDER BY {keys}, ts, event_id")
         if rule.followed_by:
             fb = rule.followed_by
             fl = "".join(f', lower("{k}")' for k in fb.link)

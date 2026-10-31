@@ -7,5 +7,8 @@ batch_rows: 10000                 # rows per UNWIND transaction
 sample_event_ids: 5               # raw event_ids kept on each aggregated relationship
 connections:
   internal_to_internal: true      # lateral movement candidates: always loaded
-  touching_alert_ips: true        # any connection whose src or dst IP is an alert entity
+  touching_alert_ips: both        # both: src AND dst are alert entities (attacker <-> victim);
+                                  # either: one side is (pulled 929k IPs into the graph on firex-10G)
   all: false                      # true loads every src->dst pair (9.9M pairs on firex-10G; not recommended)
+campaigns:
+  max_entity_alerts: 25           # an entity shared by more alerts than this is too common to link on

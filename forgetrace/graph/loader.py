@@ -135,8 +135,10 @@ def _connections(con, ws: str, cfg: dict, alerts_ips: list[str]) -> list[dict]:
         parts = []
         if sc.get("internal_to_internal"):
             parts.append("(src_is_external = false AND dst_is_external = false)")
-        if sc.get("touching_alert_ips") and alerts_ips:
-            parts.append("(src_ip IN (SELECT unnest(?)) OR dst_ip IN (SELECT unnest(?)))")
+        mode = sc.get("touching_alert_ips")
+        if mode and alerts_ips:
+            join = "OR" if mode == "either" else "AND"  # default: both ends are alert entities
+            parts.append(f"(src_ip IN (SELECT unnest(?)) {join} dst_ip IN (SELECT unnest(?)))")
         if not parts:
             return []
         where = " OR ".join(parts)
@@ -277,7 +279,13 @@ def load(driver, rows: dict[str, list[dict]], ws: str, run_meta: dict, replace: 
             s.run(stmt).consume()
         if replace:
             t = time.perf_counter()
-            s.run("MATCH (n {ws: $ws}) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS", ws=ws).consume()
+            # Relationships first, in batches: a hub node (a public server) can hold ~10^6 relationships,
+            # and DETACH DELETE of such a node in one transaction exhausts Neo4j's transaction memory.
+            for lab in LABELS + ["Campaign"]:
+                s.run(f"MATCH (n:{lab} {{ws: $ws}})-[r]-() CALL (r) {{ DELETE r }} IN TRANSACTIONS OF 10000 ROWS",
+                      ws=ws).consume()
+            for lab in LABELS + ["Campaign"]:
+                s.run(f"MATCH (n:{lab} {{ws: $ws}}) CALL (n) {{ DELETE n }} IN TRANSACTIONS OF 10000 ROWS", ws=ws).consume()
             out["steps"]["clear"] = {"seconds": round(time.perf_counter() - t, 3)}
         for step, cypher in WRITES:
             data = rows.get(step, [])
@@ -309,6 +317,9 @@ def load_run(con: duckdb.DuckDBPyConnection, ws: str, run_meta: dict, progress=N
         build_s = round(time.perf_counter() - t, 3)
         res = load(drv, rows, ws, run_meta, progress=progress, database=cfg["database"])
         res["build_rows_seconds"] = build_s
+        from forgetrace.graph.campaigns import link_and_group
+
+        res["campaigns"] = link_and_group(drv, ws, database=cfg["database"])
         res["uri"] = cfg["uri"]
         return res
     finally:

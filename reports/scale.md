@@ -57,6 +57,25 @@ What the current (EDR-oriented) rule set produces on firex-10G, for context only
 
 From line 3,848,244 onward (69.0% of firex-10G) every event has `eventtime=1793350105999999000` (2026-10-30 08:48:25.999999 IST), apparently the generator's end-of-window clamp. The same pattern starts at ≈ 35% of firex-50G. Time-window rules see that region as one instant, so counts per window are inflated there; this is reported, not corrected.
 
-## 5. firex-50G
+## 5. firex-10G with the FortiGate rule pack (`bench/firex-10G.rules.json`, commit after 90aeb99)
+
+| Stage | Baseline rules (12) | + FortiGate pack (29 rules), first run | + SQL prefilter and attacker↔victim graph scope |
+|---|---|---|---|
+| Ingest | 90.3 s | 99.7 s | 99.1 s |
+| Detect | 8.6 s | 109.8 s (F001 31.6 s, F016 31.5 s, F009 25.6 s) | **26.2 s** (no rule above 4.7 s) |
+| Correlate | 15.4 s | 45.0 s | 44.0 s |
+| Graph load + campaigns | 6.4 s (load only) | 116.3 s (928,915 IP nodes) | **9.8 s** (4,347 IP nodes) |
+| **End to end** | 124.7 s | 382.8 s | **194.1 s** |
+| Peak memory (all processes) | 3.92 GB | 3.95 GB | 3.51 GB |
+
+| Output | Baseline rules | + FortiGate pack |
+|---|---|---|
+| Detections / alert groups | 326 / 323 | 353 / 344 (18 rules fired) |
+| Incidents (≥ 2 tactics) | 0 | 2 (both made of brute-force groups inflated by the timestamp clamp, D-74) |
+| Graph campaigns (long-range, D-70) | — | 4, three spanning > 6 h; one joins XSS, SQLi, command injection, traversal, port scan, lateral sweeps and staged exfiltration over 129 h; one is a firewall admin account creation followed by an external interactive login |
+
+Accuracy of these outputs is measured on firex-30G (labelled); firex-10G is the development set.
+
+## 6. firex-50G
 
 Run interrupted by the owner after ingest (488 ranges, 32.7 GB). To be re-run with progress reporting after the rule pack.

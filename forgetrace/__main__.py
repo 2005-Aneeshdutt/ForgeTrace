@@ -22,6 +22,14 @@ def main() -> None:
     r.add_argument("--dataset", default=None, help="dataset name stamped on every event (e.g. d0, lanl, ait)")
     r.add_argument("--graph", action="store_true", help="also load the run into Neo4j (docs/wp/GR-1.md)")
     r.add_argument("--quiet", action="store_true", help="no progress lines on stderr")
+    st = sub.add_parser("stream", help="analyse a file in batches as it is read (or while it grows)")
+    st.add_argument("--input", required=True)
+    st.add_argument("--out", required=True)
+    st.add_argument("--batch-mb", type=int, default=1024)
+    st.add_argument("--follow", action="store_true", help="keep reading while the file grows (live upload)")
+    st.add_argument("--idle-timeout", type=float, default=30.0, help="seconds without growth before stopping (--follow)")
+    st.add_argument("--graph", action="store_true")
+    st.add_argument("--dataset", default=None)
     s = sub.add_parser("serve")
     s.add_argument("--out", default="out")
     s.add_argument("--host", default="127.0.0.1")
@@ -35,6 +43,15 @@ def main() -> None:
         print(json.dumps({k: stats[k] for k in ("stages", "wall_time_s", "peak_rss_bytes", "ingest", "detections",
                                                 "alert_groups", "kept_edges", "incidents", "abstained_components")},
                          indent=1))
+    elif a.cmd == "stream":
+        import sys
+
+        from forgetrace.stream import stream
+
+        res = stream(Path(a.input), Path(a.out), batch_bytes=a.batch_mb << 20, follow=a.follow,
+                     idle_timeout=a.idle_timeout, graph=a.graph, dataset=a.dataset,
+                     progress=lambda m: print(f"[stream] {m}", file=sys.stderr, flush=True))
+        print(json.dumps({k: res[k] for k in ("wall_time_s", "first_incident_s", "first_campaign_s", "ingest")}, indent=1))
     else:
         import os
 

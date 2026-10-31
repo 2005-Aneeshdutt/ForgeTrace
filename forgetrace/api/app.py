@@ -531,3 +531,19 @@ def graph_neighbors(key: str, ws: str | None = None, limit: int = 100) -> dict[s
 @app.get("/graph/reach")
 def graph_reach(user: str, ws: str | None = None, max_hops: int = 3, min_criticality: float = 0.8) -> dict[str, Any]:
     return _graph("reach_paths", ws or default_ws(), user, max_hops, min_criticality)
+
+
+@app.get("/graph/campaigns")
+def graph_campaigns(ws: str | None = None) -> dict[str, Any]:
+    return _graph("campaign_list", ws or default_ws())
+
+
+@app.get("/stream/status")
+def stream_status(ws: str | None = None) -> dict[str, Any]:
+    """Progress of a `forgetrace stream` run: batches done, events, detections, incidents, first-incident time."""
+    name = ws or default_ws()
+    d = ws_dirs().get(name)
+    p = d / "stream_status.json" if d else None
+    if p is None or not p.exists():
+        raise HTTPException(404, f"no stream status for workspace {name!r}")
+    return json.loads(p.read_text())

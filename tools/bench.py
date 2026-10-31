@@ -46,13 +46,24 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="workspace directory for the run")
     ap.add_argument("--report", required=True, help="bench JSON to write")
     ap.add_argument("--label", default="")
+    ap.add_argument("--graph", action="store_true", help="pass --graph to forgetrace run")
     a = ap.parse_args()
     inp = Path(a.input)
     size = sum(f.stat().st_size for f in ([inp] if inp.is_file() else inp.rglob("*")) if f.is_file())
-    cmd = [sys.executable, "-m", "forgetrace", "run", "--input", str(inp), "--out", a.out]
+    cmd = [sys.executable, "-m", "forgetrace", "run", "--input", str(inp), "--out", a.out] + (["--graph"] if a.graph else [])
     t0 = time.perf_counter()
-    proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     ps = psutil.Process(proc.pid)
+    lines: list[str] = []
+
+    def pump():  # relay the run's progress lines live, keep a copy for the failure report
+        for ln in proc.stdout:
+            lines.append(ln)
+            print(ln, end="", flush=True)
+
+    import threading
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
     peak, samples = 0, []
     while proc.poll() is None:
         try:
@@ -62,8 +73,11 @@ def main() -> None:
             break
         peak = max(peak, rss)
         samples.append({"t": round(time.perf_counter() - t0, 1), "rss_mb": round(rss / 2**20, 1), "cpu_pct": cpu})
+        if len(samples) % 30 == 0:
+            print(f"[bench] t={samples[-1]['t']:.0f}s rss={samples[-1]['rss_mb']:.0f} MB cpu={cpu:.0f}%", flush=True)
         time.sleep(1.0)
-    log = proc.stdout.read() if proc.stdout else ""
+    reader.join(timeout=10)
+    log = "".join(lines)
     wall = time.perf_counter() - t0
     if proc.returncode != 0:
         print(log[-4000:])

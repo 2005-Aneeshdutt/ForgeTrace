@@ -112,3 +112,16 @@ def reach_paths(ws: str, user: str, max_hops: int = 3, min_criticality: float = 
                 u=uid(ws, f"user:{user}"), ws=ws, c=float(min_criticality), limit=limit)
     return {"user": user, "max_hops": max_hops, "min_criticality": min_criticality, "paths": [dict(r) for r in rows],
             "note": "Relationship paths are possibilities, not observed attacker activity (dossier §14)."}
+
+
+def campaign_list(ws: str) -> dict[str, Any]:
+    """Long-range campaigns (forgetrace/graph/campaigns.py) with their alerts in time order."""
+    from forgetrace.graph.campaigns import campaigns as _campaigns
+
+    drv, why = driver()
+    if drv is None:
+        raise RuntimeError(why)
+    rows = _campaigns(drv, ws)
+    return {"campaigns": rows, "count": len(rows),
+            "note": "Campaigns join alerts that share an uncommon address, account or domain at any time gap; "
+                    "they are inferences with the shared entity and gap on every link."}
