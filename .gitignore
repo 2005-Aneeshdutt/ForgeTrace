@@ -11,3 +11,6 @@ edr_events.json
 *.pdf
 # Generated dev data (reproducible with `make sample`)
 data/sample/events.log
+# Analyst drop folder: keep only the README
+data/input/*
+!data/input/README.md

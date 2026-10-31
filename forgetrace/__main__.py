@@ -10,7 +10,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="forgetrace")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
-    r.add_argument("--input", nargs="+", required=True)
+    r.add_argument("--input", nargs="+", required=True, help="log files and/or folders (folders are scanned recursively)")
     r.add_argument("--out", default="out")
     s = sub.add_parser("serve")
     s.add_argument("--out", default="out")

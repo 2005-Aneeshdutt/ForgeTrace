@@ -43,7 +43,32 @@ def display_id(eid: int) -> str:
     return f"F{f:02d}:{o:012d}"
 
 
-def run(inputs: list[Path], out: Path) -> dict:
+LOG_SUFFIXES = {".log", ".json", ".jsonl", ".ndjson", ".cef", ".txt"}
+
+
+def expand_inputs(paths: list[Path]) -> list[Path]:
+    """Files are taken as given; a directory contributes every log-like file inside it
+    (recursive, sorted, hidden files and README skipped)."""
+    out: list[Path] = []
+    for p in paths:
+        p = Path(p)
+        if p.is_dir():
+            out += sorted(f for f in p.rglob("*") if f.is_file() and f.suffix.lower() in LOG_SUFFIXES
+                          and not any(part.startswith(".") for part in f.relative_to(p).parts)
+                          and f.name.lower() != "readme.md")
+        elif p.is_file():
+            out.append(p)
+        else:
+            raise FileNotFoundError(f"input not found: {p}")
+    if not out:
+        raise ValueError("no log files found in the given input(s)")
+    return out
+
+
+def run(inputs: list[Path], out: Path, progress=None) -> dict:
+    """progress(stage, fraction) is optional; used by the API's background runs."""
+    inputs = expand_inputs(inputs)
+    report = progress or (lambda stage, frac: None)
     t0 = time.perf_counter()
     stages = {}
     out.mkdir(parents=True, exist_ok=True)
@@ -51,18 +76,22 @@ def run(inputs: list[Path], out: Path) -> dict:
     if db.exists():
         db.unlink()
     t = time.perf_counter()
-    manifest = ingest(inputs, out)
+    report("ingest", 0.0)
+    manifest = ingest(inputs, out, progress=lambda d, t: report("ingest", 0.8 * d / max(t, 1)))
     stages["ingest_s"] = round(time.perf_counter() - t, 3)
     con = store.connect(out)
     store.create_views(con, out)
     t = time.perf_counter()
+    report("detect", 0.82)
     rules = load_rules()
     det = detect(con, rules)
     stages["detect_s"] = round(time.perf_counter() - t, 3)
     t = time.perf_counter()
+    report("correlate", 0.88)
     res = correlate(con)
     stages["correlate_s"] = round(time.perf_counter() - t, 3)
     t = time.perf_counter()
+    report("reach", 0.93)
     payloads = build_payloads(con, res)
     stages["reach_and_cache_s"] = round(time.perf_counter() - t, 3)
     persist(con, res, payloads, rules)
@@ -75,7 +104,9 @@ def run(inputs: list[Path], out: Path) -> dict:
              "ingest": manifest["stats"], "detections": det["detections"], "rule_seconds": det["rule_seconds"],
              "alert_groups": len(res["groups"]), "candidate_edges": len(res["candidate_edges"]),
              "kept_edges": len(res["edges"]), "incidents": len(payloads), "abstained_components": len(res["abstained"])}
+    stats["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
     (out / "run_stats.json").write_text(json.dumps(stats, indent=1, default=str))
+    report("done", 1.0)
     return stats
 
 

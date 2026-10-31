@@ -71,7 +71,8 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000) -> dict:
+def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000, progress=None) -> dict:
+    """progress(bytes_done, bytes_total) is called about every 20k lines (optional)."""
     out.mkdir(parents=True, exist_ok=True)
     ev_dir = out / "events"
     ev_dir.mkdir(exist_ok=True)
@@ -93,7 +94,9 @@ def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000) -> dict:
         part += 1
         buf = {n: [] for n in names}
 
-    for file_id, path in enumerate(sorted(Path(p).resolve() for p in inputs), start=1):
+    paths = sorted(Path(p).resolve() for p in inputs)
+    total_bytes, done_before = sum(os.path.getsize(p) for p in paths), 0
+    for file_id, path in enumerate(paths, start=1):
         st = os.stat(path)
         files.append({"file_id": file_id, "path": str(path), "size": st.st_size, "mtime": st.st_mtime,
                       "sha256": _sha256_file(path)})
@@ -107,6 +110,8 @@ def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000) -> dict:
                 offset += len(line)
                 line_no += 1
                 stats["lines"] += 1
+                if progress and stats["lines"] % 20_000 == 0:
+                    progress(done_before + offset, total_bytes)
                 if len(line) > max_line and not line.endswith(b"\n"):
                     rest = f.readline()  # consume remainder of an oversized line
                     offset += len(rest)
@@ -136,7 +141,10 @@ def ingest(inputs: list[Path], out: Path, batch_rows: int = 200_000) -> dict:
                 stats["events"] += 1
                 if len(buf["event_id"]) >= batch_rows:
                     flush()
+        done_before += st.st_size
     flush()
+    if progress:
+        progress(total_bytes, total_bytes)
     pq.write_table(pa.Table.from_pydict(errs, schema=ERR_SCHEMA), out / "parse_errors.parquet")
     manifest = {"files": files, "stats": stats,
                 "manifest_digest": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()}

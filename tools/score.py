@@ -130,7 +130,7 @@ def _ratio(n, d) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gt", default="data/sample/ground_truth.json")
-    ap.add_argument("--out", default="out")
+    ap.add_argument("--out", default="out/sample")
     a = ap.parse_args()
     t0 = time.perf_counter()
     out = Path(a.out)
