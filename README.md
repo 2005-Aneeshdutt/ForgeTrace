@@ -2,6 +2,52 @@
 
 ForgeTrace is a local, deterministic, offline investigation engine. It streams security logs (any format: JSON, CEF, syslog, key=value, CSV) into Parquet, runs YAML detection rules in DuckDB, and labels each detection with an ATT&CK technique and tactic. It links detections into incidents using a transparent edge score, reconstructs the attack path, and estimates which critical assets are reachable next. In **live mode** it consumes logs as they arrive and keeps enriching a **Neo4j knowledge graph**, so an event arriving now is linked to related activity seen days ago. Every alert, incident and campaign comes with a **human-verifiable explanation**: the rule's condition in plain English, the observed numbers, the exact raw log lines (SHA-256 re-verified), and how to check it by hand. Detection combines YAML rules with two unsupervised, explainable ML models (a per-entity behaviour model and a graph link model for lateral movement) that corroborate the rules. An optional, clearly labelled AI summary can restate those facts; detection never uses an LLM.
 
+## PRD requirements at a glance (Kill Chain and Attack Path Analysis)
+
+**In one sentence:** ForgeTrace reads a large pile of security logs and finds the attack hidden in them. It labels each step with MITRE ATT&CK and a kill chain stage, links the steps into one attack story across hosts, users, IPs and time, and shows where the attacker could go next. It also explains every finding so an analyst can check it against the raw log lines.
+
+We implemented **every must-have requirement (FR-1 to FR-7) and all five bonus items (B-1 to B-5)**, and processed the **Extreme 50 GB tier**.
+
+**Must have**
+
+| PRD | What ForgeTrace does | Where |
+|---|---|---|
+| FR-1 Read the full data set without loading it into memory | Streams files in parallel byte ranges (9 workers) into compact Parquet. Never loads a whole file. | `forgetrace/ingest/`; firex-50G: 62 M events, 0 parse errors |
+| FR-2 Detect suspicious events | 42 YAML behaviour rules (for example "many failed logins then a success"). Two unsupervised ML models (behaviour baselines + graph links) corroborate them. | `config/rules/`, `forgetrace/ml/` |
+| FR-3 Map each detection to ATT&CK + kill chain stage | Every detection carries a technique, a tactic and a kill-chain phase from a fixed table, never guessed by an LLM. | `config/attack.yml` |
+| FR-4 Link related events into one incident by host, user, IP and time | Correlation scores links between alerts that share an entity within a time window, in a sensible attack order. Connected alerts become an incident. | `forgetrace/correlate/` |
+| FR-5 Attack path as a timeline and a graph of hosts and users | Ordered attack path plus timeline per incident. Graph view in the console, optional Neo4j knowledge graph. | `GET /incidents/{id}/path`, console "Attack Graph Explorer" |
+| FR-6 What the attacker could reach next | Reachability over observed and configured access, with a "disable account" what-if simulation. It needs host/logon data; a firewall-only log has none, so the view is empty there. | `GET /incidents/{id}/reach`, `POST /incidents/{id}/simulate` |
+| FR-7 Simple API or page, with a README | FastAPI + the Kairos web console. This README. | `make serve` → http://127.0.0.1:8000 |
+
+**Bonus**
+
+| PRD | Status |
+|---|---|
+| B-1 Risk score, worst incident on top | ✅ every incident has a risk score and severity band; lists are sorted by risk |
+| B-2 Plain-English incident report | ✅ deterministic explanation with hash-verified raw lines; optional AI summary that only restates verified facts |
+| B-3 How many raw alerts were merged into each incident | ✅ shown per incident ("Alerts merged") |
+| B-4 New detection rule by editing a config file | ✅ rules are YAML in `config/rules/`, with no code change |
+| B-5 Live mode: new log lines update the attack path within seconds | ✅ `make live` follows a folder in micro-batches; console "Live Simulation" replays a log in real time |
+
+**Targets (PRD section 4), measured**
+
+Accuracy was measured on the 7 labelled FVS validation logs (`tools/eval_fvs.py`, `results/20261101-054622`). Rules were tuned on the 3 tune logs only. Scale was measured on the provided firex-50G (Extreme tier), which has no answer key.
+
+| What | PRD Good / Great | ForgeTrace |
+|---|---|---|
+| Detection (planted steps found) | > 70% / > 90% | **71%** (95 of 134 steps); 91% on the tune logs, 65% on held-out test logs |
+| Correct labels | > 60% / > 85% | **82%** at ATT&CK parent level |
+| Attack path rebuilt | half / all | **17 of 24** planted attacks rebuilt into an incident; **2 of 2** in the right order on the dev sample (`make score`) |
+| False alarms (incidents that are not real attacks) | < 30% / < 10% | **28%** (9 of 32) |
+| Processing time, full tier | < 3 h / < 1 h | **19 min** for 50 GB |
+| Peak memory | < 16 GB / < 8 GB | **5.9 GB** |
+| Time to open one incident's path | < 2 s / < 500 ms | **127 ms** (measured in the console on the 50 GB run) |
+
+Every target meets at least the **Good** bar. Processing time, memory and investigation speed meet **Great**.
+
+Known weak spots are listed under *Known limitations*: port sweeps, some hard-tier attacks, and reachability on firewall-only data. The full validation method is in section 8 of *How to run*.
+
 ## Live mode, knowledge graph and explanations (Phase 2)
 
 ```bash
