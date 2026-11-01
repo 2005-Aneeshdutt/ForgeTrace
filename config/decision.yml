@@ -1,0 +1,14 @@
+# Live simulation: log-pattern baseline and the deterministic decision table (DECISIONS D-108..D-111).
+# No LLM takes part in a decision. Decisions are recommendations; nothing is ever executed.
+baseline_events: 4000       # lines used to learn normal patterns; a pattern first seen later counts as unique
+routine_min_seen: 50        # a pattern seen at least this often counts as routine
+speed: {default_eps: 200, min_eps: 20, max_eps: 5000}
+contain: {min_chain_tactics: 3}    # linked chain spanning this many tactics and touching a critical asset
+investigate: {min_links: 1, min_fused: 0.9}    # correlated with an earlier alert, or detectors agree strongly
+monitor: {min_severity: 2}
+scenario:                   # pacing of attack simulations (DECISIONS D-113)
+  seeds: [7, 11, 23]        # rotated per run, so addresses and timing differ between demos
+  fast_eps: 1500            # background before the attack starts
+  step_eps: 40              # lines of an attack step
+  hold_s: 8                 # seconds between steps: long enough for a batch, so predictions land first
+  tail_lines: 60            # background after the last step

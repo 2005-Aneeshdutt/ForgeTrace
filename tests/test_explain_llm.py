@@ -105,6 +105,7 @@ def test_spend_cap(facts, isolated, tmp_path):
 def test_no_key_means_deterministic_only(facts, isolated, monkeypatch):
     a, _ = facts
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr("forgetrace.report.llm._dotenv", lambda name: None)  # a real key in .env must not reach this test
     r = llm.narrate(a)
     assert r["status"] == "unavailable" and "OPENROUTER_API_KEY" in r["reason"]
 

@@ -98,7 +98,7 @@ Live mode: micro-batches (batch + 60-min lookback), bucketed long-window state, 
 | Pipeline | `forgetrace/pipeline.py` (batch), `forgetrace/stream.py`, `forgetrace/live/{engine,graph_sync}.py`, `config/live.yml` |
 | Graph | `forgetrace/graph/{loader,campaigns,queries}.py`, `config/graph.yml`, `deploy/neo4j/docker-compose.yml` |
 | Explanations / LLM | `forgetrace/report/{explain,llm}.py`, `tools/llm/openrouter.py`, `config/explain.yml`, `config/llm.yml` |
-| API / UI | `forgetrace/api/app.py`, `forgetrace/api/static/{index.html,app.js,app.css}` (vanilla JS + Cytoscape, strict CSP) |
+| API / UI | `forgetrace/api/app.py`, `frontend/` (React source), built into `forgetrace/api/static` (previously vanilla JS + Cytoscape, strict CSP) |
 | Evaluation (paused) | `forgetrace/eval/`, `tools/score.py`, `tools/gen_scenarios.py`, `tools/gen_suite.py`, `tools/run_suite.py` |
 
 ---

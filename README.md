@@ -81,9 +81,9 @@ export OPENROUTER_API_KEY=...                  # optional: enables the "AI summa
 make serve                                     # http://127.0.0.1:8000
 ```
 
-- **Overview / Incidents / Detections:** batch workspaces. Pick the workspace at the top.
-- **Live:** recent batches and alerts. Each alert has a `rule` or `model` badge and its fused probability. Click one to see why it was flagged.
-- **Knowledge graph:** incidents and campaigns as timelines, plus an entity explorer (needs Neo4j).
+- **Command Centre / Incident Management / Detection Engine:** batch workspaces. Pick the workspace at the top.
+- **Live Ingestion:** in a live workspace, recent batches and alerts. Each alert has a `rule` or `model` badge and its fused probability. Click one to see why it was flagged.
+- **Attack Graph Explorer, Knowledge graph tab:** incidents, campaigns and an entity explorer (needs Neo4j).
 - **Explanation panel:**
   - the condition, or for a model flag its reasons against the entity's usual range
   - the raw log lines, re-read and SHA-256 verified
@@ -241,21 +241,41 @@ incident_cache (precomputed JSON) ──► FastAPI + static page ──► GET 
 
 All read endpoints take `?ws=<workspace>` (default: the most recently analysed).
 
+## Live simulation
+
+`make serve`, open **Live Simulation** and press **Simulate** on an attack. The console's display name is Kairos; the package and commands stay `forgetrace`.
+
+Generated logs arrive line by line through the unchanged `forgetrace live` engine, in its own process. Each step is paced so a batch can finish before the next one starts.
+
+| Part | How it works | Where |
+|---|---|---|
+| Attack scenarios | Background logs plus one planted story from `tools/gen_scenarios.py`: credential theft, phishing to C2, or a benign control | `forgetrace/datasets/scenarios.py` |
+| Known or unique log | A pattern is a line's behaviour without identities. One first seen after the baseline is unique | `forgetrace/live/patterns.py` |
+| Decision | Fixed table using correlation, pattern history and critical assets. A recommendation only | `forgetrace/live/decide.py`, `config/decision.yml` |
+| Prediction | Each rule alert predicts the next technique family. It counts only if a later batch confirms it on a shared entity | `forgetrace/live/predict.py`, `config/predict.yml` |
+| Predicted vs actual | Compares the record with the scenario's answer key after the fact. Detection and prediction never see the key | `scenarios.score()` |
+| Generate explanation | Needs `OPENROUTER_API_KEY` in the server's environment. Pseudonymised, no raw lines sent, validated, spend-capped | `forgetrace/report/llm.py` |
+
+Read the scores with care. The rules, the prediction table and the scenarios share an author, so a high match rate shows the pipeline works end to end, not field accuracy on unseen attacks.
+
 ## Dashboard
 
-`make serve`, then open http://127.0.0.1:8000. The dashboard is a single offline page with sidebar navigation, a workspace switcher and a light/dark theme. Links are shareable, e.g. `/?ws=sample#/incidents/2/graph`.
+`make serve`, then open http://127.0.0.1:8000. The console is a React app whose built files live in `forgetrace/api/static`, so running it needs no Node and nothing is fetched from a CDN. To change it, edit `frontend/src` and run `make ui` (Node 20+); `cd frontend && npm run dev` gives a dev server that proxies the API on port 8000.
 
 | Page | What it shows |
 |---|---|
-| **Pipeline demo** | Guided 8-step walkthrough of `data/demo/demo_events.log` (5 hand-written events: 3 JSON, 2 CEF, 1 benign) showing each stage's real stored output: ingest (offsets, event IDs, SHA-256) → normalise and store (vendor field → envelope field trace, Parquet) → detect and flag (rule hits, label priority) → aggregate (groups, folded secondary label) → correlate (entity index, every candidate pair's L/T/P/R/F score, kept vs dropped) → attack graph (components, two-tactic gate) → path reconstruction → risk, reachability, containment and evidence check. Deep link: `#/demo/<step>` |
-| **Overview** | Funnel (raw events → detections → alert groups → incidents → unlinked); source files, data span, run time, peak memory; detections by tactic in kill-chain order; events by type; highest-risk incidents; detections per rule; parse errors |
-| **Incidents** | Risk-sorted list plus unlinked alerts. Per incident: severity, risk and its terms, key facts, a template summary (no AI), and tabs: **Attack path** (numbered kill-chain stepper with evidence links and the edge behind each hop), **Graph** (Cytoscape, primary-path hops highlighted, click a node or edge for its evidence and L/T/P/R/F breakdown), **Timeline** (filterable raw events), **Reachability & containment** (compromised set, reachable assets with typed paths, `disable_account` simulation with the fixed disclaimer), **Correlation evidence**, **Uncertainty** |
-| **Detections** | Every rule hit, filterable by text, tactic, rule and whether it is in an incident; links to incidents and raw evidence |
-| **Data sources** | Drag-and-drop upload into `data/input/` with progress, file list with remove, **Analyze input folder** with live progress, workspace table (open / re-run), and SHA-256 fingerprints of the files behind the active workspace |
-| **Detection rules** | Loaded rules with technique, tactic, type, severity, confidence prior, label priority, file, and the compiled DuckDB SQL |
-| **Evaluation** | Ground-truth metrics and per-step table (sample workspace only; labelled as synthetic) |
+| Command Centre | Data flow from log types through the engine to outputs, KPIs, recent incidents and detections |
+| Live Ingestion | Upload with progress, start a run, stage progress, processing log, last-run metrics, live-mode status |
+| Detection Engine | Filterable table, detector split, trend, drawer with explanation and raw events |
+| Incident Management | Risk-sorted queue, then a workspace with timeline, graph preview, explanation and uncertainties |
+| Attack Graph Explorer | Entity and step graphs with evidence on every node and edge, replay, optional Neo4j knowledge graph |
+| MITRE ATT&CK / Cyber Kill Chain | Technique matrix with evidence; seven stages from the mapping in `config/attack.yml` |
+| Asset Reachability | Exposure paths by hop. Always labelled potential, never proof of compromise |
+| Decision Intelligence / Response Simulator | Actions ranked on modelled reach reduction; before/after simulation. Nothing is executed |
+| Reports & Analytics | Evidence-backed report (Markdown, HTML, print to PDF), charts, evaluation against PRD targets |
+| Rules & Configuration / System Health | Rules with compiled SQL and trigger counts; service state and latency measured in the browser |
 
-Clicking any event opens the **evidence drawer**. It shows the raw line re-read from the source with a verified/not-verified badge, both SHA-256 values, the event ID, the source event ID and the line/offset. It has copy and pretty-print buttons. All log-derived text is rendered as text, never HTML. The page sends a strict CSP (`script-src 'self'`, no inline styles or scripts) and makes no CDN requests.
+Every value comes from the API. Where the backend has no data the UI says so: no SSE, cancel or live CPU gauges; no case workflow; `disable_account` is the only simulated action; rules are read-only. See `docs/DECISIONS.md` D-102 to D-107.
 
 ## Dataset generation
 

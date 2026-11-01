@@ -22,3 +22,5 @@ data/.pseudo_key
 
 # FVS validation logs + answer keys (read-only evidence; scored by tools/eval_fvs.py)
 Validation dataset/
+frontend/node_modules/
+.env

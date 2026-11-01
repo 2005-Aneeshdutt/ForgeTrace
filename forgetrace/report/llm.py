@@ -92,6 +92,18 @@ class Pseudonymiser:
         return TOKEN.sub(lambda m: self.back.get(m.group(0), m.group(0)), text)
 
 
+def _dotenv(name: str) -> str | None:
+    """Read at call time from the repo's git-ignored .env, so pasting a key needs no restart."""
+    p = config.ROOT / ".env"
+    if not p.exists():
+        return None
+    for line in p.read_text().splitlines():
+        k, _, v = line.partition("=")
+        if k.strip() == name:
+            return v.strip().strip("'\"") or None
+    return None
+
+
 def build_payload(facts: dict) -> tuple[dict, Pseudonymiser]:
     """Facts the model may see: no raw log lines (they may hold other identifiers), pseudonymised."""
     ps = Pseudonymiser()
@@ -164,7 +176,7 @@ def narrate(facts: dict, run_id: str | None = None, transport=None) -> dict[str,
     if cache.exists():
         hit = json.loads(cache.read_text())
         return {**hit, "status": "cached", "narrative": _restore(hit.get("narrative"), ps)}
-    api_key = os.environ.get(cfg["api_key_env"])
+    api_key = os.environ.get(cfg["api_key_env"]) or _dotenv(cfg["api_key_env"])
     if not api_key and transport is None:
         return {"status": "unavailable", "reason": f"set {cfg['api_key_env']} to enable the narrative (deterministic explanation shown)"}
     ledger = config.ROOT / cfg["ledger"]

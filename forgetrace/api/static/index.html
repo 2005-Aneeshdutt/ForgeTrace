@@ -3,53 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ForgeTrace Console</title>
-<link rel="stylesheet" href="/static/app.css">
-<script src="/static/vendor/cytoscape.min.js"></script>
-<script src="/static/app.js" defer></script>
+<title>Kairos</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<!-- Cytoscape skips its injected <style>, which the API CSP would block, when this id exists. -->
+<meta id="__________cytoscape_stylesheet">
+  <script type="module" crossorigin src="/static/assets/index-BJAw3w1q.js"></script>
+  <link rel="stylesheet" crossorigin href="/static/assets/index-DtXoHblE.css">
 </head>
 <body>
-<div class="app">
-  <nav class="nav" aria-label="Main">
-    <div class="brand"><span class="brand-mark" id="brand-mark"></span><span>ForgeTrace<small>Attack investigation</small></span></div>
-    <div class="nav-section">Walkthrough</div>
-    <a data-route="demo" id="nav-demo"></a>
-    <div class="nav-section">Investigate</div>
-    <a data-route="live" id="nav-live"></a>
-    <a data-route="graph" id="nav-graph"></a>
-    <a data-route="overview" id="nav-overview"></a>
-    <a data-route="incidents" id="nav-incidents"></a>
-    <a data-route="detections" id="nav-detections"></a>
-    <div class="nav-section">Configure</div>
-    <a data-route="sources" id="nav-sources"></a>
-    <a data-route="rules" id="nav-rules"></a>
-    <a data-route="evaluation" id="nav-evaluation"></a>
-    <div class="nav-foot">
-      <strong>Detection engine</strong><br>
-      Deterministic YAML rules + scored correlation (dossier §12). Runs offline. An optional, clearly labelled AI summary only restates verified evidence.
-      <div id="nav-version" class="muted"></div>
-    </div>
-  </nav>
-  <div class="main">
-    <header class="topbar">
-      <h1 id="page-title">Overview</h1>
-      <span class="spacer"></span>
-      <span id="run-chip"></span>
-      <label class="ws-picker">Workspace <select id="ws-select" aria-label="Workspace"></select></label>
-      <button class="btn ghost sm" id="theme-btn" type="button" title="Toggle light/dark">Theme</button>
-    </header>
-    <main class="content" id="view"></main>
-  </div>
-</div>
-<aside class="drawer" id="drawer" aria-label="Raw evidence">
-  <div class="dh"><h3>Raw evidence</h3><span id="ev-badge"></span><span class="grow"></span>
-    <button class="btn sm" id="ev-pretty" type="button">Pretty JSON</button>
-    <button class="btn sm" id="ev-copy" type="button">Copy line</button>
-    <button class="btn sm" id="ev-close" type="button">Close</button></div>
-  <div class="db"><div id="ev-meta" class="kv"></div><pre id="ev-raw"></pre>
-    <p class="muted small">The line is re-read from the source file at its byte offset and its SHA-256 is recomputed and compared with the digest stored at ingest. A mismatch means the source changed.</p></div>
-</aside>
-<div class="tooltip hidden" id="tip"></div>
-<div class="toast" id="toast"></div>
+<div id="root"></div>
 </body>
 </html>
