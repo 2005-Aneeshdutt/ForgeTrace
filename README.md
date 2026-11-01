@@ -148,6 +148,7 @@ The workflow needs config only, no code changes:
    - learned site values, such as home countries
    - the features the ML models could use
 3. If fields are missing, add aliases, timestamp formats or message patterns in `config/field_aliases.yaml`. Set the time zone or home countries in `config/site.yaml` if you know them.
+   Or let the schema helper draft the aliases: `python tools/schema_suggest.py suggest <file>` lists the keys the alias table does not know. With `OPENROUTER_API_KEY` set, it asks the LLM for mappings: only key names, value shapes and masked examples are sent. It then checks every suggestion in code (envelope field, never a vendor verdict, at least 90% of values fit) and shows before/after fill rates. `... accept <fingerprint>` saves it to `config/schemas/`. Accepted overlays only add alias names after the built-in ones, so named formats (FortiGate, ECS, CEF) and already-mapped fields parse exactly as before (D-119).
 4. Re-run. Lines that cannot be parsed are kept in `parse_errors` with their byte offset.
 
 ### 7. Tuning

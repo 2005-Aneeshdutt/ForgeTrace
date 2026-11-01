@@ -57,6 +57,12 @@ fields:
 never_map: [threat, threatname, attack, attackid, virus, signature, severity, level, risk, riskscore, crscore,
             catdesc, apprisk, alert, alertname, verdict, labels, rule, rulename]
 
+# Name hints for the schema helper (tools/schema_suggest.py, D-120): a suggested mapping is rejected when the
+# key name carries only the other side's words (e.g. peerAddr -> src_ip). Not used by the parser.
+direction_hints:
+  src: [actor, client, src, source, orig, initiator, caller, from]
+  dst: [peer, dst, dest, target, server, resp, responder, to]
+
 # source_type when no profile names one: first rule whose fields are all present wins.
 source_type_rules:
   - {type: endpoint, any: [process, command_line, parent_process, registry_path, file_path]}

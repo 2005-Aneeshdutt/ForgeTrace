@@ -22,9 +22,25 @@ def field_map() -> dict:
     return load_yaml(CONFIG_DIR / "field_map.yaml")
 
 
+SCHEMA_DIR = CONFIG_DIR / "schemas"
+
+
 @lru_cache(maxsize=None)
 def field_aliases() -> dict:
-    return load_yaml(CONFIG_DIR / "field_aliases.yaml")
+    """field_aliases.yaml plus accepted schema overlays in config/schemas/*.yaml (D-119). Overlay names
+    are appended after the built-in ones, so an existing mapping always wins; with no overlay files the
+    result is exactly field_aliases.yaml."""
+    al = load_yaml(CONFIG_DIR / "field_aliases.yaml")
+    for p in sorted(SCHEMA_DIR.glob("*.yaml")) if SCHEMA_DIR.is_dir() else ():
+        ov = load_yaml(p)
+        for canon, names in (ov.get("fields") or {}).items():
+            if canon in al["fields"]:
+                al["fields"][canon] = al["fields"][canon] + [n for n in names if n not in al["fields"][canon]]
+        al["timestamp"] = al["timestamp"] + [n for n in ov.get("timestamp") or [] if n not in al["timestamp"]]
+        for canon, ws in (ov.get("outcome_words") or {}).items():
+            if canon in al.get("outcome_words", {}):
+                al["outcome_words"][canon] = al["outcome_words"][canon] + list(ws)
+    return al
 
 
 @lru_cache(maxsize=None)

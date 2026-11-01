@@ -96,6 +96,12 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
   - only one simulation runs per server, and pattern state is in memory
 - Next: more scenarios need rules first (no ransomware or impact rule exists); calibrate decision thresholds on labelled data.
 
+## Schema helper (2026-11-01)
+- Completed: `tools/schema_suggest.py` (profile → LLM proposal → code checks → before/after fill rates → accept); `config.field_aliases()` merges `config/schemas/*.yaml`; tests in `tests/test_schema_suggest.py` (fake LLM). D-119.
+- Not re-run: no dataset or existing workspace was re-processed; with no overlay present, parsing is byte-for-byte unchanged.
+- Open risks: tested with a fake transport only (no `OPENROUTER_API_KEY` on this machine); fields with no envelope column are reported, not stored.
+- Next: optional `extra` column for unmapped fields so rules can use them.
+
 ## Metrics (make score, seed 7)
 Step recall 100% (11/11) · parent label 100% · sub-technique 81.8% (R008 emits T1021, ground truth T1021.001/.002) · attacks in order 2/2 · false-alarm share 0/2 · run 1.14 s · peak RSS 231.5 MiB.
 The generator, ground truth and rules share an author, so these numbers are optimistic (see README "How to read these numbers").
