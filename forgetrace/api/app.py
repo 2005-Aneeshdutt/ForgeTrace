@@ -8,6 +8,8 @@ Uploads stream to data/input/ (no file paths accepted, names validated). Local-o
 """
 from __future__ import annotations
 
+import asyncio
+import atexit
 import json
 import os
 import re
@@ -20,12 +22,15 @@ from typing import Any, Literal
 
 import duckdb
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from forgetrace import config
+from forgetrace.datasets.scenarios import CATALOG
 from forgetrace.ingest.evidence import get_raw
+from forgetrace.live.simulator import WS as SIM_WS
+from forgetrace.live.simulator import Simulator, pattern_facts, sim_config
 from forgetrace.reach.reach import reachability, simulate
 from forgetrace.rules.engine import load_rules, rules_summary
 
@@ -671,3 +676,100 @@ def graph_incident_list(ws: str | None = None) -> dict[str, Any]:
 @app.get("/graph/chain")
 def graph_chain(kind: str, id: str, ws: str | None = None) -> dict[str, Any]:
     return _graph("chain_graph", ws or default_ws(), kind.capitalize(), id)
+
+
+# ----------------------------------------------------------------------------- live simulation
+def _sim_reset() -> None:
+    _drop_con(SIM_WS)
+
+
+_sim = Simulator(OUT, lambda sql: con(SIM_WS).execute(sql).fetchall(), _sim_reset)
+atexit.register(_sim.stop)
+
+
+class SimStart(BaseModel):
+    source: str | None = Field(default=None, min_length=1, max_length=256)
+    scenario: str | None = Field(default=None, max_length=64)
+    eps: int | None = None
+
+
+class SimSpeed(BaseModel):
+    eps: int
+
+
+def _sim_sources() -> dict[str, Path]:
+    """Replay sources are looked up by name, so a request can never name an arbitrary path."""
+    found = {p.name: p for name, p in SOURCES.items() if p.is_file()}
+    found.update({f["name"]: INPUT_DIR / f["name"] for f in list_inputs()["files"]})
+    return {k: v for k, v in found.items() if v.exists()}
+
+
+@app.get("/sim/sources")
+def sim_sources() -> dict[str, Any]:
+    return {"sources": [{"name": k, "size": v.stat().st_size} for k, v in _sim_sources().items()], "speed": sim_config()["speed"],
+            "scenarios": [{"id": k, **{f: v[f] for f in ("title", "text", "icon")}} for k, v in CATALOG.items()]}
+
+
+@app.post("/sim/start")
+def sim_start(body: SimStart) -> dict[str, Any]:
+    if (OUT / "forgetrace.duckdb").exists():
+        raise HTTPException(400, "server started on a single result directory; start with `make serve` to simulate")
+    if body.scenario:
+        if body.scenario not in CATALOG:
+            raise HTTPException(404, f"unknown scenario {body.scenario!r}")
+        _sim.start(None, None, body.scenario)
+        return _sim.tick()
+    src = _sim_sources().get(body.source or "")
+    if src is None:
+        raise HTTPException(404, f"unknown replay source {body.source!r}")
+    _sim.start(src, body.eps)
+    return _sim.tick()
+
+
+@app.post("/sim/speed")
+def sim_speed(body: SimSpeed) -> dict[str, Any]:
+    _sim.set_speed(body.eps)
+    return {"eps": _sim.eps}
+
+
+@app.post("/sim/stop")
+def sim_stop() -> dict[str, Any]:
+    _sim.stop()
+    return _sim.tick()
+
+
+@app.get("/sim/state")
+def sim_state() -> dict[str, Any]:
+    return {**_sim.tick(), **_sim.view()}
+
+
+@app.get("/sim/stream")
+async def sim_stream() -> StreamingResponse:
+    """Server-Sent Events: a light tick four times a second, the heavier view only when it changes."""
+    async def gen():
+        seen = None
+        while True:
+            t = _sim.tick()
+            yield f"event: tick\ndata: {json.dumps(t, default=str)}\n\n"
+            if t["version"] != seen:
+                seen = t["version"]
+                yield f"event: view\ndata: {json.dumps(_sim.view(), default=str)}\n\n"
+            await asyncio.sleep(0.25)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/sim/patterns/{pattern_id}/explain")
+def sim_explain(pattern_id: str) -> dict[str, Any]:
+    """Facts come from verified raw lines; the optional narrative goes through the guarded LLM path."""
+    from forgetrace.report.llm import narrate
+
+    p = _sim.pattern(pattern_id)
+    if p is None:
+        raise HTTPException(404, "unknown pattern")
+    name, d = ws_dir(SIM_WS)
+    lines = [{**r, "note": r["reason"]} for r in (get_raw(e, d, con(name)) for e in p["event_ids"][:5]) if r["verified"]]
+    if not lines:
+        raise HTTPException(409, "this pattern's lines are not in a finished batch yet; try again in a few seconds")
+    facts = pattern_facts(p, lines, _sim.linked(p["alerts"]))
+    return {**facts, "narrative": narrate(facts, run_id=SIM_WS)}
