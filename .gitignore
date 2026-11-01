@@ -19,3 +19,5 @@ data/d0/seed_*/
 data/llm_cache/
 data/llm_ledger.jsonl
 data/.pseudo_key
+frontend/node_modules/
+.env
