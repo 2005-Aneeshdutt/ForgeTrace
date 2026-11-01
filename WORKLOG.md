@@ -58,6 +58,25 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
   - live keeps models in memory, so a restart refits on the stored windows
 - Next: measure ML stage time on firex-10G; tune the budget by manual review of flagged windows.
 
+## Console rebuild (2026-11-01)
+- Completed: React console with 13 pages plus the pipeline walkthrough in `frontend/`, built into `forgetrace/api/static`. No detection, correlation or API code changed. Decisions D-94 to D-99.
+- Metrics: 159 tests pass, 3 skipped. Headless Chrome: 18/18 checks on the upload-to-report journey, with no console errors; every route on every workspace type (batch, demo, live, empty) rendered without error.
+- Open risks:
+  - status is polled every 600 ms, because the API has no SSE
+  - ingest and rule stages cannot show per-stage counts until the run ends
+  - entity graphs use the events embedded in the incident record, which can be a sample on large incidents
+  - the console has not been tried on firex-scale results; `/detections` is capped at 5,000 rows in the UI
+- Next: backend support for SSE, run cancel, live CPU/memory, more simulated actions, rule editing and a case workflow.
+
+## Live simulation (2026-11-01)
+- Completed: Kairos display name; Live Simulation page with attack buttons, live log stream over SSE, unique-log box, generated explanations, deterministic decisions, next-step prediction, and predicted-vs-actual scoring. The live engine, rules and correlation are unchanged. Decisions D-100 to D-105.
+- Open risks:
+  - the rules, the prediction table and the scenarios share an author, so match rates are optimistic
+  - R010 needs the child process, so T1204 and T1059 land in one batch and the phishing step 2 is detected but not predicted
+  - the OpenRouter path was tested with a fake transport, not the live service
+  - only one simulation runs per server, and pattern state is in memory
+- Next: more scenarios need rules first (no ransomware or impact rule exists); calibrate decision thresholds on labelled data.
+
 ## Metrics (make score, seed 7)
 Step recall 100% (11/11) · parent label 100% · sub-technique 81.8% (R008 emits T1021, ground truth T1021.001/.002) · attacks in order 2/2 · false-alarm share 0/2 · run 1.14 s · peak RSS 231.5 MiB.
 The generator, ground truth and rules share an author, so these numbers are optimistic (see README "How to read these numbers").
