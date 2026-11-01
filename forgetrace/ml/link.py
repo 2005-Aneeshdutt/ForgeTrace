@@ -39,6 +39,8 @@ def link_detections(con, view: str, fill: dict[str, float], history: dict[str, l
     tech = cfg["techniques"]["link"]
     w = int(cfg["window_minutes"])
     rows, new_edges, info = [], {}, {}
+    if not cfg.get("enabled"):
+        return rows, new_edges, {"skipped": "ML disabled"}
     for etype, spec in lc["edges"].items():
         needed = {"user", "host"} if etype == "logon" else {"src_ip", "dst_ip", "dst_port"}
         if any(fill.get(f, 0) == 0 for f in needed):
