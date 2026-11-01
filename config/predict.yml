@@ -1,0 +1,27 @@
+# What an attacker usually does next, by ATT&CK technique family (DECISIONS D-104). A hand-written kill-chain
+# table, not a trained model. Keys and `next` are parent techniques. No LLM is involved.
+expire_minutes: 240         # of log time: a prediction nothing confirmed by then is closed as not confirmed
+transitions:
+  T1110: [{technique: T1078, name: Valid Accounts, why: repeated guessing usually aims at a successful logon}]
+  T1078:
+    - {technique: T1136, name: Create Account, why: a stolen logon is often made durable with a new account}
+    - {technique: T1098, name: Account Manipulation, why: a stolen logon is often raised to higher privilege}
+    - {technique: T1021, name: Remote Services, why: a stolen logon is often used to move to other hosts}
+    - {technique: T1059, name: Command and Scripting Interpreter, why: a stolen logon is often used to run commands}
+  T1136:
+    - {technique: T1098, name: Account Manipulation, why: a new account is usually given privileges next}
+    - {technique: T1021, name: Remote Services, why: a new foothold is often followed by movement to other hosts}
+  T1098: [{technique: T1021, name: Remote Services, why: raised privileges are usually spent on reaching other hosts}]
+  T1021:
+    - {technique: T1041, name: Exfiltration Over C2 Channel, why: reaching a data host is often followed by theft}
+    - {technique: T1048, name: Exfiltration Over Alternative Protocol, why: reaching a data host is often followed by theft}
+  T1204: [{technique: T1059, name: Command and Scripting Interpreter, why: a malicious file normally launches a script}]
+  T1059:
+    - {technique: T1547, name: Boot or Logon Autostart, why: code that ran once usually tries to survive a reboot}
+    - {technique: T1071, name: Application Layer Protocol, why: code that ran usually calls home for instructions}
+  T1547:
+    - {technique: T1071, name: Application Layer Protocol, why: a persistent implant usually starts beaconing}
+    - {technique: T1021, name: Remote Services, why: a persistent foothold is often used to move to other hosts}
+  T1071:
+    - {technique: T1021, name: Remote Services, why: an operator on a beacon usually moves to more valuable hosts}
+    - {technique: T1041, name: Exfiltration Over C2 Channel, why: an established channel is often used to take data}
