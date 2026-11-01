@@ -52,8 +52,9 @@ def test_ground_truth_not_imported_by_engine():
 
 
 def test_ui_never_uses_innerhtml():
-    js = (ROOT / "forgetrace/api/static/app.js").read_text()
-    assert "innerHTML" not in js.replace("never innerHTML", "") and "insertAdjacentHTML" not in js
+    for src in (ROOT / "frontend/src").rglob("*.ts*"):  # authored UI; the minified bundle carries React's own internals
+        text = src.read_text()
+        assert not any(k in text for k in ("innerHTML", "insertAdjacentHTML", "dangerouslySetInnerHTML")), src
     html = (ROOT / "forgetrace/api/static/index.html").read_text()
     assert "http://" not in html and "https://" not in html  # no CDN at runtime
 
