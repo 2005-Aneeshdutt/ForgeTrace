@@ -109,7 +109,7 @@ export function CommandCentre() {
       actions={running ? <Pill tone="cyan">Processing: {job?.stage}</Pill> : <Pill>Last run {run.finished_at?.slice(0, 16).replace("T", " ") ?? "—"}</Pill>}>
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
         <Kpi label="Events processed" value={fmtN(events)} sub={`${fmtBytes(run.dataset?.files.reduce((a, f) => a + f.size, 0))} of logs`} onClick={() => go("ingest")} />
-        <Kpi label="Events / second" value={eps ? fmtN(Math.round(eps)) : "N/A"} sub="average of last ingest" tone="cyan" />
+        <Kpi label="Events / second" value={eps ? fmtN(Math.round(eps)) : "N/A"} sub={eps ? "average of last ingest" : run.ingest_reused ? "ingest re-used; not re-timed" : "average of last ingest"} tone="cyan" />
         <Kpi label="Total detections" value={fmtN(o.funnel.detections)} sub={`${fmtN(o.funnel.alert_groups)} groups`} onClick={() => go("detections")} tone="warn" />
         <Kpi label="Active incidents" value={fmtN(list.filter((i) => i.status === "emitted").length)} sub="status: emitted" onClick={() => go("incidents")} />
         <Kpi label="High-severity incidents" value={fmtN(highCount)} sub={`${bySev("medium")} medium · ${bySev("low")} low`} tone={highCount ? "crit" : undefined} onClick={() => go("incidents")} />

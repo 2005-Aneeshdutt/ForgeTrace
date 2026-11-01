@@ -67,7 +67,7 @@ export interface Overview {
   funnel: { events: number | null; detections: number | null; alert_groups: number | null; incidents: number | null; unlinked: number | null };
 }
 export interface RunStats {
-  stages?: Record<string, number>; wall_time_s?: number; peak_rss_bytes?: number; peak_rss_note?: string; config_hash?: string; code_version?: string;
+  stages?: Record<string, number>; wall_time_s?: number; analysis_wall_time_s?: number; ingest_reused?: unknown; peak_rss_bytes?: number; peak_rss_note?: string; config_hash?: string; code_version?: string;
   ingest?: { lines: number; events: number; errors: number; empty: number }; ingest_parallel?: { workers: number; ranges: number };
   detections?: number; rule_seconds?: Record<string, number>; alert_groups?: number; candidate_edges?: number; kept_edges?: number;
   incidents?: number; abstained_components?: number; graph?: unknown; finished_at?: string;
