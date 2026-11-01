@@ -120,8 +120,43 @@ Every threshold and the reason for it is in [docs/DECISIONS.md](docs/DECISIONS.m
 
 ```bash
 make setup | sample | run [GRAPH=1] | analyze | live [GRAPH=1] [RESET=1] [WATCH=dir] | score | demo | serve | check | test
-make graph-up | graph-down | bench DATA=<file> | eval DS=<name> EXP=<name> | clean
+make graph-up | graph-down | bench DATA=<file> | eval DS=<name> EXP=<name> | ui | clean
+.venv/bin/python tools/eval_fvs.py        # score every FVS validation log against its answer key -> results/<run_id>/
+.venv/bin/python tools/ablation_fvs.py    # what rules, each ML model and fusion contribute -> results/ablation-<run_id>/
 ```
+
+`make ui` rebuilds the Kairos console (`frontend/`, React + Vite) into `forgetrace/api/static/`. Node is needed only
+for this; the built files are committed, so `make serve` works without Node.
+
+### 8. Validation on labelled logs (FVS)
+
+Put each validation log in its own folder with its `ground_truth.json` under `Validation dataset/scratch_ref/`
+(git-ignored), then run `tools/eval_fvs.py`. The pipeline reads only the `.log` files; the scorer matches the answer
+key by byte offset, which is exact. It reports:
+- line precision, recall and F1, at alert level and at incident level;
+- attacks detected and attacks shown inside an incident, by tier;
+- steps found and technique accuracy;
+- decoy false positives and false-alarm incidents;
+- detection latency and runtime.
+
+Each metric is computed on all steps and again excluding steps that use unverified log ids. Every run writes a new
+folder, so earlier results are never overwritten.
+
+Current results on the 7 available logs (`results/20261101-054622`; rules tuned on the 3 tune logs only, D-94..D-101):
+
+| | Before | After |
+|---|---|---|
+| Attacks shown inside an incident | 9/24 | 17/24 |
+| Attack steps found | 55/134 | 95/134 |
+| Technique correct (parent level) | 35% | 82% |
+| Decoys inside an incident | 32/298 | 19/298 |
+| False-alarm incidents | 14 of 23 | 9 of 32 |
+
+The ablation (`results/ablation-20261101-055935/ABLATION.md`) shows how each part contributes:
+- Rules find almost every step.
+- The behaviour model links the attacker's alerts into incidents: attacks in an incident go from 13/24 to 17/24, and incident line recall from 0.15 to 0.56.
+- The link model adds nothing measurable on firewall-only data.
+- Fusion ranking roughly doubles the real attacks among the top 10 alerts (3.3 to 6.0).
 
 ## Where the input logs come from
 
