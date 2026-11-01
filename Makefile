@@ -4,7 +4,7 @@ INPUT ?= $(DATA)
 OUT ?= out
 INPUT_DIR ?= data/input
 
-.PHONY: setup sample run analyze live demo score eval bench check serve test clean graph-up graph-down
+.PHONY: ui setup sample run analyze live demo score eval bench check serve test clean graph-up graph-down
 
 setup:
 	python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -54,6 +54,10 @@ graph-down:
 check:
 	$(PY) -m ruff check forgetrace tools tests
 	$(PY) -m pytest -q
+
+# Rebuild the console (Node needed only here; the built files in forgetrace/api/static are committed)
+ui:
+	cd frontend && npm ci && npm run build
 
 serve:
 	$(PY) -m forgetrace serve --out $(OUT)
