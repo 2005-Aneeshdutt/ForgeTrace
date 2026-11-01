@@ -1,6 +1,8 @@
 # Correlation parameters (dossier §12). Every value is the dossier default unless marked.
 agg_gap_s: 900            # repeated-detection aggregation gap (15 min default)
 window_s: 21600           # max candidate-edge window: b.ts_first <= a.ts_last + 6 h (brief: 6 h max)
+max_groups_per_entity: 500  # D-116: an entity in more alert groups is a hub (no candidate pairs from it; its degree penalty is ~0 anyway)
+max_neighbours_per_entity: 50  # D-117: per shared entity, pair a group with at most its 50 nearest later groups
 skew_s: 60                # tolerate b starting slightly before a (clock skew)
 
 weights:                  # s = clip(0.45 L + 0.20 T + 0.20 P + 0.10 R - 0.25 F)

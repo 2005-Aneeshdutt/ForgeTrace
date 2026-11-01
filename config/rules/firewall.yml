@@ -601,7 +601,7 @@
 
 # --- Credential access and DNS exfiltration (D-100) ---------------------------------------------------------
 - id: F029
-  version: 1
+  version: 2
   title: Repeated failed logins for one account from one address (password guessing)
   author: forgetrace
   technique: T1110.001
@@ -618,7 +618,7 @@
       - {field: user, op: not_null}
   group_by: [src_ip, user]
   threshold: {count: 4, window: 2h}
-  aggregate_by: [src_ip, user]
+  aggregate_by: [src_ip]   # D-115: one alert group per guessing source (firex: 260 sources x 955 accounts)
 
 - id: F030
   version: 1

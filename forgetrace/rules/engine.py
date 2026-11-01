@@ -515,6 +515,11 @@ def _duplicates(rows: list[dict]) -> None:
                     break
 
 
+ENTITY_SAMPLE = 5000          # D-114: entities of a larger detection come from its first and last 2,500 events
+ENTITY_CHUNK_ROWS = 1_000_000  # member rows per entity-aggregation chunk (keeps list(DISTINCT) within memory)
+ENTITY_THREADS = 4
+
+
 def _write(con: duckdb.DuckDBPyConnection, rows: list[dict]) -> None:
     con.execute("DROP TABLE IF EXISTS detections")
     con.execute("""CREATE TABLE detections (detection_id VARCHAR, rule_id VARCHAR, rule_version INT,
@@ -533,13 +538,46 @@ def _write(con: duckdb.DuckDBPyConnection, rows: list[dict]) -> None:
     con.register("_det_batch", batch)
     con.execute(f"INSERT INTO detections ({', '.join(cols)}, reasons) SELECT {', '.join(cols)}, reasons FROM _det_batch")
     con.unregister("_det_batch")
-    # Entities: distinct envelope entity values over each detection's member events.
+    # Entities: distinct envelope entity values over each detection's member events (D-114). list(DISTINCT)
+    # cannot spill to disk, so detections are processed in chunks of at most ENTITY_CHUNK_ROWS member rows, and
+    # a detection with more than ENTITY_SAMPLE members takes its entities from its first and last ENTITY_SAMPLE/2
+    # events (members, labels and evidence stay complete). Smaller detections are unchanged.
     aggs = ", ".join(f"list(DISTINCT e.\"{f}\" ORDER BY e.\"{f}\") FILTER (WHERE e.\"{f}\" IS NOT NULL) AS \"{f}\""
                      for f in ENTITY_FIELDS)
-    con.execute(f"""CREATE OR REPLACE TEMP TABLE _ent AS
-        SELECT d.detection_id, {aggs}
-        FROM detections d, unnest(d.member_event_ids) AS m(eid) JOIN events e ON e.event_id = m.eid
-        GROUP BY d.detection_id""")
+    half = ENTITY_SAMPLE // 2
+    con.execute(f"""CREATE OR REPLACE TEMP TABLE _dm AS
+        SELECT detection_id, unnest(CASE WHEN len(member_event_ids) > {ENTITY_SAMPLE}
+                                         THEN list_concat(member_event_ids[1:{half}], member_event_ids[-{half}:])
+                                         ELSE member_event_ids END) AS eid
+        FROM detections""")
+    sizes = con.execute("SELECT detection_id, count(*) FROM _dm GROUP BY 1 ORDER BY 1").fetchall()
+    chunks, cur, n = [], [], 0
+    for did, k in sizes:
+        cur.append(did)
+        n += k
+        if n >= ENTITY_CHUNK_ROWS:
+            chunks.append(cur)
+            cur, n = [], 0
+    if cur:
+        chunks.append(cur)
+    con.execute("CREATE OR REPLACE TEMP TABLE _ent AS SELECT NULL::VARCHAR AS detection_id, "
+                + ", ".join(f'NULL::VARCHAR[] AS "{f}"' for f in ENTITY_FIELDS) + " LIMIT 0")
+    cols = ", ".join(f'"{f}"' for f in ENTITY_FIELDS)
+    threads = con.execute("SELECT current_setting('threads')").fetchone()[0]
+    con.execute(f"SET threads = {min(int(threads), ENTITY_THREADS)}")  # fewer concurrent hash tables in this step
+    try:
+        for ids in chunks:
+            # The chunk's events first (only the entity columns), then the per-detection aggregate on that small table.
+            con.execute("CREATE OR REPLACE TEMP TABLE _dmc AS SELECT * FROM _dm WHERE detection_id IN (SELECT unnest(?))", [ids])
+            con.execute(f"""CREATE OR REPLACE TEMP TABLE _ce AS SELECT event_id, {cols} FROM events
+                            WHERE event_id IN (SELECT eid FROM _dmc)""")
+            con.execute(f"""INSERT INTO _ent SELECT m.detection_id, {aggs}
+                FROM _dmc m JOIN _ce e ON e.event_id = m.eid GROUP BY m.detection_id""")
+    finally:
+        con.execute(f"SET threads = {int(threads)}")
+    con.execute("DROP TABLE IF EXISTS _dmc")
+    con.execute("DROP TABLE IF EXISTS _ce")
+    con.execute("DROP TABLE _dm")
     obj = ", ".join(f"'{f}', coalesce(_ent.\"{f}\", [])" for f in ENTITY_FIELDS)
     con.execute(f"UPDATE detections SET entities = json_object({obj}) FROM _ent "
                 f"WHERE detections.detection_id = _ent.detection_id")

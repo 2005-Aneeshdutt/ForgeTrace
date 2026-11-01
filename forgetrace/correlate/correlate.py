@@ -74,13 +74,17 @@ def aggregate(con: duckdb.DuckDBPyConnection) -> list[dict]:
     for gi, g in enumerate(groups):
         for m in g["member_event_ids"]:
             groups_of_event[m].append(gi)
+    # A group takes the secondary detection when one of their shared events carries the group's technique as
+    # its primary label. Walk the detection's own events through the event -> groups index instead of building
+    # each candidate group's member set: identical result and order, but bounded by the detection's size, not
+    # by a multi-million-member group it overlaps (frozen-timestamp piles on firex-50G).
     for d in sorted(secondary, key=lambda d: d["detection_id"]):
-        cand = sorted({gi for m in d["member_event_ids"] for gi in groups_of_event.get(m, ())})
-        for g in (groups[gi] for gi in cand):  # same group order as scanning all groups
-            if any(prim.get(m) == g["technique_id"] for m in set(d["member_event_ids"]) & set(g["member_event_ids"])):
-                g["also_matched"].append({"detection_id": d["detection_id"], "rule_id": d["rule_id"],
-                                          "technique_id": d["technique_id"], "tactic": d["tactic"],
-                                          "evidence": d["evidence"]})
+        hit = {gi for m in set(d["member_event_ids"]) for gi in groups_of_event.get(m, ())
+               if prim.get(m) == groups[gi]["technique_id"]}
+        for g in (groups[gi] for gi in sorted(hit)):  # same group order as scanning all groups
+            g["also_matched"].append({"detection_id": d["detection_id"], "rule_id": d["rule_id"],
+                                      "technique_id": d["technique_id"], "tactic": d["tactic"],
+                                      "evidence": d["evidence"]})
     return groups
 
 
@@ -104,8 +108,9 @@ def entity_stats(con: duckdb.DuckDBPyConnection, groups: list[dict]) -> dict[str
     q = """
       SELECT 'user', w.v, count(DISTINCT e.host) FROM _w w JOIN events e ON e.user = w.v WHERE w.t='user' GROUP BY 1,2
       UNION ALL SELECT 'host', w.v, count(DISTINCT e.user) FROM _w w JOIN events e ON e.host = w.v WHERE w.t='host' GROUP BY 1,2
-      UNION ALL SELECT 'ip', w.v, count(DISTINCT e.host) FROM _w w JOIN events e
-            ON (e.src_ip = w.v OR e.dst_ip = w.v) WHERE w.t='ip' GROUP BY 1,2
+      UNION ALL SELECT 'ip', v, count(DISTINCT host) FROM (
+            SELECT w.v, e.host FROM _w w JOIN events e ON e.src_ip = w.v WHERE w.t='ip'
+            UNION ALL SELECT w.v, e.host FROM _w w JOIN events e ON e.dst_ip = w.v WHERE w.t='ip') GROUP BY 1,2
       UNION ALL SELECT 'domain', w.v, count(DISTINCT e.host) FROM _w w JOIN events e ON e.domain_name = w.v
             WHERE w.t='domain' GROUP BY 1,2"""
     for t, v, c in con.execute(q).fetchall():
@@ -200,15 +205,24 @@ def candidate_edges(groups: list[dict], ipmap: dict, deg: dict, con: duckdb.Duck
     # identical order key are paired in both directions, as the Phase 1 stable sort did.
     pairs = set()
     win = timedelta(seconds=cfg["window_s"])
+    # D-116: an entity shared by more groups than this is a hub (an account under a fleet-wide brute force, a
+    # gateway); pairing all of them is quadratic and the degree penalty makes such edges worthless anyway.
+    hub_cap = int(cfg.get("max_groups_per_entity", 500))
+    # D-117: per shared entity, a group pairs with at most its `max_neighbours_per_entity` nearest later groups
+    # (and as many equal-order ones). Pruning keeps only top-k_degree edges per node, so farther pairs could
+    # rarely survive; without the bound, groups piled on one frozen timestamp make the scan quadratic.
+    nb_cap = int(cfg.get("max_neighbours_per_entity", 50))
     for ek in sorted(index):
         ids = sorted(set(index[ek]), key=lambda x: order[x])
+        if len(ids) > hub_cap:
+            continue
         for p_, a in enumerate(ids):
             limit = gid[a]["ts_last"] + win
             q = p_ - 1
-            while q >= 0 and order[ids[q]] == order[a]:
+            while q >= 0 and order[ids[q]] == order[a] and p_ - q <= nb_cap:
                 pairs.add((a, ids[q]))
                 q -= 1
-            for b in ids[p_ + 1:]:
+            for b in ids[p_ + 1:p_ + 1 + nb_cap]:
                 if gid[b]["ts_first"] > limit:
                     break
                 pairs.add((a, b))

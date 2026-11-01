@@ -93,3 +93,39 @@ Accuracy of these outputs is measured on firex-30G (labelled); firex-10G is the 
 All 17 FortiGate rules fired at least once. R001 produced 6,040 detections, nearly all from the clamped region (D-74). Accuracy: N/A for the same reason as §3 (no labels for this seed).
 
 Next scale targets: correlation (7.7 min, single-threaded candidate-edge building over clamp-sized groups) and memory headroom (the Neo4j Docker VM reserves 8 GB on a 16 GB machine; swap reached 17.5 GB during the failed runs).
+
+## 7. `firex-50G.log` with the full Phase 2 detection stack (2026-11-01)
+
+The same 32.7 GB file (61,970,767 events), now run with:
+- the FortiGate rules including F018–F030;
+- the behaviour and graph-link models;
+- fusion;
+- the Neo4j load.
+
+Ingest ran once, with 9 workers; analysis was re-run with `forgetrace analyse` on that ingest.
+
+| Stage | Seconds |
+|---|---|
+| Ingest (9 parallel workers, fresh) | ≈ 610 |
+| ML (behaviour model: 161 k user, 234 k internal-IP and 27 k external-IP windows; link model) | 64 |
+| Rules + entity step (DuckDB, all cores) | 343 |
+| Correlate | 130 |
+| Reach + incident cache | 3 |
+| Neo4j load | 58 |
+| **Analysis total** | **538** (≈ 9 min) |
+| **End to end** | **≈ 19 min** (previous stack: ≈ 22 min) |
+
+Peak RSS was 5.9 GB.
+
+Results:
+- 164,481 detections, 5,178 alert groups (10 of them from models), 5,471 edges and 4 incidents;
+- the largest incident is the brute-force campaign: 22 groups, 1.2 M events, R001 + F027 + F029;
+- 66 model detections, within the budget.
+
+Getting this run through needed four scale fixes, D-114..D-118. Each one either leaves results unchanged at FVS scale or is an exact rewrite verified identical on all FVS workspaces:
+- the entity step ran out of memory;
+- the pair scan stalled on hub entities and frozen-timestamp piles;
+- secondary-label matching rebuilt multi-million-member sets;
+- the IP-degree query used an `OR` nested-loop join.
+
+Accuracy on this file stays N/A: firex-50G has no ground truth (D-66).
