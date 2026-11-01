@@ -129,7 +129,7 @@
   aggregate_by: [src_ip]
 
 - id: F007
-  version: 1
+  version: 2
   title: Many DNS lookups with very long labels under one domain (DNS tunnelling)
   author: forgetrace
   technique: T1071.004
@@ -145,7 +145,7 @@
       - {field: dns_label_max, op: gte, value: 30}
       - {field: domain_base, op: not_null}
   group_by: [src_ip, domain_base]
-  threshold: {count: 50, window: 1h}
+  threshold: {count: 10, window: 1h}   # D-100: slower C2 tunnels stay well above benign (0 benign >= 10/h on tune)
   aggregate_by: [src_ip, domain_base]
 
 - id: F008
@@ -169,15 +169,18 @@
   threshold: {count: 30, window: 6h}
   aggregate_by: [src_ip, dst_ip]
 
+# Exfiltration by channel (D-95): only connections carrying >= 1 MB count, so the small beacons to the same
+# address keep their C2 label; web ports = the established C2/web channel (T1041), other ports = an
+# alternative protocol (T1048). DNS tunnelling is F007.
 - id: F009
-  version: 1
-  title: Tens of MB leaving to one external address in many pieces (staged exfiltration)
+  version: 2
+  title: Tens of MB uploaded to one external address over web ports (exfiltration over the C2/web channel)
   author: forgetrace
-  technique: T1048.002
+  technique: T1041
   tactic: Exfiltration
   severity: 4
   confidence: 0.7
-  label_priority: 30
+  label_priority: 24
   type: threshold
   filter:
     all:
@@ -185,6 +188,32 @@
       - {field: event_type, op: eq, value: net_conn}
       - {field: src_is_external, op: eq, value: false}
       - {field: dst_is_external, op: eq, value: true}
+      - {field: bytes_out, op: gte, value: 1000000}
+      - {field: dst_port, op: in, value: [80, 443, 8080, 8443]}
+      - {field: dst_ip, op: rare, by: "@day", max_distinct: 1, among: {all: [{field: bytes_out, op: gte, value: 1000000}, {field: dst_is_external, op: eq, value: true}]}}   # D-96: a destination taking large uploads night after night is a backup target
+  group_by: [src_ip, dst_ip]
+  threshold: {sum: bytes_out, min: 30000000, window: 3d}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F023
+  version: 1
+  title: Tens of MB uploaded to one external address over a non-web protocol (exfiltration over an alternative protocol)
+  author: forgetrace
+  technique: T1048
+  tactic: Exfiltration
+  severity: 4
+  confidence: 0.7
+  label_priority: 24
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: true}
+      - {field: bytes_out, op: gte, value: 1000000}
+      - not: {field: dst_port, op: in, value: [53, 80, 443, 8080, 8443]}
+      - {field: dst_ip, op: rare, by: "@day", max_distinct: 1, among: {all: [{field: bytes_out, op: gte, value: 1000000}, {field: dst_is_external, op: eq, value: true}]}}   # D-96: a destination taking large uploads night after night is a backup target
   group_by: [src_ip, dst_ip]
   threshold: {sum: bytes_out, min: 30000000, window: 3d}
   aggregate_by: [src_ip, dst_ip]
@@ -209,7 +238,7 @@
   aggregate_by: [user]
 
 - id: F011
-  version: 1
+  version: 2
   title: Administrator account created on the firewall
   author: forgetrace
   technique: T1136.001
@@ -223,6 +252,7 @@
       - {field: source_type, op: eq, value: firewall}
       - {field: event_type, op: eq, value: config_change}
       - {field: message, op: regex, value: "(?i)^add system\\.admin "}
+      - {field: src_is_external, op: eq, value: true}   # D-97: routine IT account work happens from internal admin hosts
   aggregate_by: [user]
 
 - id: F012
@@ -336,3 +366,276 @@
   group_by: [dst_ip]
   threshold: {count: 50, distinct: src_ip, window: 10m}
   aggregate_by: [dst_ip]
+
+# --- Remote services between internal hosts (D-94) -------------------------------------------------------
+# A source subnet reaching an internal host on a remote-service port for the first time, and only among the
+# first two such new destinations for that subnet and port: admin subnets and scanners fan out early and
+# become established; a compromised workstation or server hopping to its next target does not.
+- id: F018
+  version: 1
+  title: First RDP connection from this subnet to an internal host (lateral movement)
+  author: forgetrace
+  technique: T1021.001
+  tactic: Lateral Movement
+  severity: 3
+  confidence: 0.7   # the novelty cap removes routine admin and scanner fan-out
+  label_priority: 25
+  type: baseline
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: false}
+      - {field: dst_port, op: in, value: [3389]}
+  first_seen:
+    keys: [src_subnet24, dst_port, dst_ip]
+    warmup: 12h
+    novelty_cap: {within: [src_subnet24, dst_port], max: 2}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F019
+  version: 1
+  title: First SMB / Windows admin shares connection from this subnet to an internal host (lateral movement)
+  author: forgetrace
+  technique: T1021.002
+  tactic: Lateral Movement
+  severity: 3
+  confidence: 0.7   # the novelty cap removes routine admin and scanner fan-out
+  label_priority: 25
+  type: baseline
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: false}
+      - {field: dst_port, op: in, value: [445, 139]}
+  first_seen:
+    keys: [src_subnet24, dst_port, dst_ip]
+    warmup: 12h
+    novelty_cap: {within: [src_subnet24, dst_port], max: 2}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F020
+  version: 1
+  title: First SSH connection from this subnet to an internal host (lateral movement)
+  author: forgetrace
+  technique: T1021.004
+  tactic: Lateral Movement
+  severity: 3
+  confidence: 0.7   # the novelty cap removes routine admin and scanner fan-out
+  label_priority: 25
+  type: baseline
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: false}
+      - {field: dst_port, op: in, value: [22]}
+  first_seen:
+    keys: [src_subnet24, dst_port, dst_ip]
+    warmup: 12h
+    novelty_cap: {within: [src_subnet24, dst_port], max: 2}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F021
+  version: 1
+  title: First WinRM connection from this subnet to an internal host (lateral movement)
+  author: forgetrace
+  technique: T1021.006
+  tactic: Lateral Movement
+  severity: 3
+  confidence: 0.7   # the novelty cap removes routine admin and scanner fan-out
+  label_priority: 25
+  type: baseline
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: false}
+      - {field: dst_port, op: in, value: [5985, 5986]}
+  first_seen:
+    keys: [src_subnet24, dst_port, dst_ip]
+    warmup: 12h
+    novelty_cap: {within: [src_subnet24, dst_port], max: 2}
+  aggregate_by: [src_ip, dst_ip]
+
+# --- Command and control confirmed by an upload to the same address (D-95, D-98) ---------------------------------------------------
+# Periodic small connections alone look exactly like software telemetry; a C2 channel is the destination the
+# network uploads a large volume to (any internal host, any order). Beacons are labelled C2; the upload keeps
+# its exfiltration label.
+- id: F022
+  version: 2
+  title: Repeated small connections to an external address that also receives a large upload from inside (C2 channel)
+  author: forgetrace
+  technique: T1071.001
+  tactic: Command and Control
+  severity: 3
+  confidence: 0.9   # telemetry-like beacons are only kept when the address also takes data out
+  label_priority: 32
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: true}
+      - {field: bytes_out, op: lte, value: 4096}
+      - {field: dst_port, op: in, value: [80, 443, 8080, 8443]}
+      - {field: dst_ip, op: in_set, among: {all: [{field: src_is_external, op: eq, value: false}, {field: bytes_out, op: gte, value: 20000000}]}}   # D-98: an address some internal host sends >= 20 MB to in one connection
+  group_by: [src_ip, dst_ip]
+  threshold: {count: 6, window: 2d}
+  aggregate_by: [src_ip, dst_ip]
+
+- id: F024
+  version: 2
+  title: Repeated small connections on a non-standard port to an external address that also receives a large upload from inside
+  author: forgetrace
+  technique: T1571
+  tactic: Command and Control
+  severity: 3
+  confidence: 0.9   # telemetry-like beacons are only kept when the address also takes data out
+  label_priority: 32
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: net_conn}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: dst_is_external, op: eq, value: true}
+      - {field: bytes_out, op: lte, value: 4096}
+      - not: {field: dst_port, op: in, value: [53, 80, 443, 8080, 8443]}
+      - {field: dst_ip, op: in_set, among: {all: [{field: src_is_external, op: eq, value: false}, {field: bytes_out, op: gte, value: 20000000}]}}   # D-98: an address some internal host sends >= 20 MB to in one connection
+  group_by: [src_ip, dst_ip]
+  threshold: {count: 6, window: 2d}
+  aggregate_by: [src_ip, dst_ip]
+
+
+# --- Firewall administration from an external session (D-97) ----------------------------------------------
+# The session address comes from ui="https(<ip>)" (field_map extract). IT staff administer from internal hosts.
+- id: F025
+  version: 1
+  title: Administrator account privileges changed from an external session (account manipulation)
+  author: forgetrace
+  technique: T1098
+  tactic: Persistence
+  severity: 4
+  confidence: 0.9
+  label_priority: 24
+  type: match
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: config_change}
+      - {field: src_is_external, op: eq, value: true}
+      - {field: message, op: regex, value: "(?i)^edit system\\.admin "}
+  aggregate_by: [user]
+
+- id: F026
+  version: 1
+  title: Firewall policy changed from an external session (impair defenses)
+  author: forgetrace
+  technique: T1562.004
+  tactic: Defense Evasion
+  severity: 4
+  confidence: 0.9
+  label_priority: 24
+  type: match
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: config_change}
+      - {field: src_is_external, op: eq, value: true}
+      - {field: message, op: regex, value: "(?i)^(edit|add|delete) firewall\\.policy"}
+  aggregate_by: [user]
+
+# --- Initial access (D-99) ----------------------------------------------------------------------------------
+- id: F027
+  version: 1
+  title: Burst of connections to one internal host from several addresses of one external /24 (exploit attempt)
+  author: forgetrace
+  technique: T1190
+  tactic: Initial Access
+  severity: 3
+  confidence: 0.7   # rotating sources inside one /24 within two minutes is tooling, not browsing
+  label_priority: 26
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: src_is_external, op: eq, value: true}
+      - {field: dst_is_external, op: eq, value: false}
+      - {field: src_subnet24, op: not_null}
+  group_by: [src_subnet24, dst_ip]
+  threshold: {count: 3, distinct: src_ip, window: 2m}
+  aggregate_by: [src_subnet24, dst_ip]
+
+- id: F028
+  version: 1
+  title: Visit to a domain no other host uses, by a host that also talks to an address taking large uploads (phishing link)
+  author: forgetrace
+  technique: T1566.002
+  tactic: Initial Access
+  severity: 3
+  confidence: 0.7   # a one-off site alone is common; on the host that later runs a C2 channel it is the likely entry
+  label_priority: 26
+  type: match
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: http_req}
+      - {field: src_is_external, op: eq, value: false}
+      - {field: domain_base, op: rare, by: src_ip, max_distinct: 1, among: {all: [{field: src_is_external, op: eq, value: false}]}}
+      - field: src_ip
+        op: in_set
+        among:
+          all:
+            - {field: event_type, op: eq, value: net_conn}
+            - {field: dst_is_external, op: eq, value: true}
+            - {field: bytes_out, op: lte, value: 4096}
+            - {field: dst_ip, op: in_set, among: {all: [{field: src_is_external, op: eq, value: false}, {field: bytes_out, op: gte, value: 20000000}]}}
+  aggregate_by: [src_ip, domain_base]
+
+# --- Credential access and DNS exfiltration (D-100) ---------------------------------------------------------
+- id: F029
+  version: 1
+  title: Repeated failed logins for one account from one address (password guessing)
+  author: forgetrace
+  technique: T1110.001
+  tactic: Credential Access
+  severity: 3
+  confidence: 0.7
+  label_priority: 24
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: auth_fail}
+      - {field: src_ip, op: not_null}
+      - {field: user, op: not_null}
+  group_by: [src_ip, user]
+  threshold: {count: 4, window: 2h}
+  aggregate_by: [src_ip, user]
+
+- id: F030
+  version: 1
+  title: DNS tunnel at data-transfer volume (hundreds of long-label lookups an hour under one domain)
+  author: forgetrace
+  technique: T1048.003
+  tactic: Exfiltration
+  severity: 4
+  confidence: 0.9
+  label_priority: 28   # wins over the tunnel's C2 label (F007) on the high-volume part
+  type: threshold
+  filter:
+    all:
+      - {field: source_type, op: eq, value: firewall}
+      - {field: event_type, op: eq, value: dns_query}
+      - {field: dns_label_max, op: gte, value: 30}
+      - {field: domain_base, op: not_null}
+  group_by: [src_ip, domain_base]
+  threshold: {count: 100, window: 1h}
+  aggregate_by: [src_ip, domain_base]

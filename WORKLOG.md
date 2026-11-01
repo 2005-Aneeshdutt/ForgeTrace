@@ -58,6 +58,26 @@ Start: 2026-10-31 14:13 IST. Deadline: 16:43 IST. Implementation finished about 
   - live keeps models in memory, so a restart refits on the stored windows
 - Next: measure ML stage time on firex-10G; tune the budget by manual review of flagged windows.
 
+## FVS validation (2026-11-01)
+- Completed:
+  - `tools/eval_fvs.py`: exact byte-offset matching; every metric on all steps and excluding steps with unverified logids
+  - baseline run `results/20261101-051721`
+  - tuned on the 3 tune logs only: rules F018–F030 plus changes to F007, F009 and F011; engine features `novelty_cap`, `rare @day/among`, `in_set`, field-map `extract`
+  - live history view for dataset-wide operators (D-94..D-101)
+  - final run `results/20261101-054622`
+- Metrics, baseline → final (pooled):
+  - tune: attacks in incident 3/9 → 8/9, steps found 0.47 → 0.91, technique (parent) 0.25 → 0.92
+  - held-out test: steps found 0.42 → 0.65, technique 0.41 → 0.73, false incidents 4/7 → 1/7, incident line precision 0.55 → 0.95
+  - stress + adversarial: attacks in incident 3/9 → 6/9, steps found 0.35 → 0.59
+  - all 7: 17/24 attacks in an incident (was 9/24), 95/134 steps found (was 55), decoys in an incident 19/298 (was 32)
+  - 188 tests pass
+- Open risks:
+  - only `scratch_ref` (7 logs) is available, not the 22-log suite
+  - pooled line precision is low (0.08 at incident level), dominated by the 7-day stress log's broad groups
+  - nightly-backup false positive accepted (D-96)
+  - port sweeps (T1046) and some hard-tier chains are still missed
+- Next: run on the full suite when available; reduce group breadth on long logs; sweep detection that survives the vulnerability-scanner decoy.
+
 ## Metrics (make score, seed 7)
 Step recall 100% (11/11) · parent label 100% · sub-technique 81.8% (R008 emits T1021, ground truth T1021.001/.002) · attacks in order 2/2 · false-alarm share 0/2 · run 1.14 s · peak RSS 231.5 MiB.
 The generator, ground truth and rules share an author, so these numbers are optimistic (see README "How to read these numbers").

@@ -1,0 +1,22 @@
+attack_id,tier,chain,order,step,variant,technique,tactic,events,events_flagged,found,in_incident,predicted,technique_exact,technique_parent,rules,unverified_logid,evasion
+A001,medium,main_prd,1,credential_attack,admin_spray_scattered,T1110.003,Credential Access,141,92,True,False,T1110,False,True,"F029,R001",False,False
+A001,medium,main_prd,2,initial_access,admin_login,T1078,Initial Access,1,1,True,True,T1078,True,True,R002,True,False
+A001,medium,main_prd,3,persistence,policy_change,T1562.004,Defense Evasion,1,1,True,True,T1562.004,True,True,F026,True,False
+A001,medium,main_prd,4,compromise,drive_by,T1189,Initial Access,2,0,False,False,,False,False,,False,False
+A001,medium,main_prd,5,c2,beacon_nonstd_port,T1571,Command and Control,21,0,False,False,,False,False,,False,False
+A001,medium,main_prd,6,discovery,targeted_scan,T1046,Discovery,6,2,True,False,T1021.004,False,False,F020,False,False
+A001,medium,main_prd,7,lateral_fileserver,smb,T1021.002,Lateral Movement,14,0,False,False,,False,False,,False,False
+A001,medium,main_prd,8,lateral_dc,winrm,T1021.006,Lateral Movement,15,2,True,False,T1021.006,True,True,F021,False,False
+A001,medium,main_prd,9,exfiltration,dns_exfil,T1048.003,Exfiltration,361,361,True,True,T1048.003,True,True,"F007,F030,ML-UEBA-src_ip",False,False
+A002,easy,dmz_staging,1,exploit_public,web_exploit,T1190,Initial Access,19,19,True,False,T1190,True,True,F027,False,False
+A002,easy,dmz_staging,2,collection,pull_from_fileserver,T1039,Collection,2,0,False,False,,False,False,,False,False
+A002,easy,dmz_staging,3,exfiltration,over_c2,T1041,Exfiltration,6,6,True,False,T1041,True,True,"F009,R011",False,False
+A003,medium,main_prd,1,credential_attack,admin_bruteforce_single,T1110.001,Credential Access,71,71,True,True,T1110,False,True,"F003,F029,ML-UEBA-user,R001,R001c",False,False
+A003,medium,main_prd,2,initial_access,admin_login,T1078,Initial Access,1,1,True,True,T1078,True,True,"F003,R001c,R002",True,False
+A003,medium,main_prd,3,persistence,policy_change,T1562.004,Defense Evasion,1,1,True,True,T1562.004,True,True,F026,True,False
+A003,medium,main_prd,4,compromise,phishing_link,T1566.002,Initial Access,5,0,False,False,,False,False,,False,False
+A003,medium,main_prd,5,c2,beacon_https,T1071.001,Command and Control,57,3,True,True,T1078,False,False,ML-UEBA-src_ip,False,False
+A003,medium,main_prd,6,discovery,targeted_scan,T1046,Discovery,8,8,True,True,T1078,False,False,"F019,ML-LINK-admin_net,ML-UEBA-src_ip",False,False
+A003,medium,main_prd,7,lateral_fileserver,ssh,T1021.004,Lateral Movement,11,4,True,True,T1078,False,False,"F020,ML-UEBA-src_ip",False,False
+A003,medium,main_prd,8,lateral_dc,smb,T1021.002,Lateral Movement,14,0,False,False,,False,False,,False,False
+A003,medium,main_prd,9,exfiltration,cloud_storage,T1567.002,Exfiltration,1,1,True,False,T1041,False,False,"F009,R011",False,False

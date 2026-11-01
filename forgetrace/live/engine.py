@@ -39,7 +39,7 @@ import pyarrow as pa
 from forgetrace import config, store
 from forgetrace.correlate.correlate import ENT, _evidence_ids, aggregate, candidate_edges, entity_stats, ip_host_map, prune
 from forgetrace.ingest.ingest import default_workers, ingest_batch
-from forgetrace.rules.engine import Rule, compile_filter, detect, detection_row, load_rules, parse_duration
+from forgetrace.rules.engine import Rule, compile_filter, detect, detection_row, load_rules, parse_duration, set_history_view
 from forgetrace.rules.router import plan as route
 from forgetrace.stream import _line_end
 
@@ -230,7 +230,14 @@ class LiveEngine:
         base = [r for r in enabled if r.type == "baseline"]
         extra = self._long_rules(long_, batch_no, bmax) + self._first_seen(base)
         ml_rows, ml_info = self._ml(run_plan.capability_profile, batch_no, bmin)
-        det = detect(self.con, short, extra_rows=extra + ml_rows)
+        hot = [p for b in self.state["batches"] if b["tier"] == "hot" for p in b["files"]]
+        self.con.execute(f"CREATE OR REPLACE TEMP VIEW events_hist AS SELECT * FROM read_parquet({hot!r}, union_by_name = true) "
+                         f"WHERE ts <= {_lit_ts(bmax)}")
+        set_history_view("events_hist")  # rare / in_set see all history to date (D-101)
+        try:
+            det = detect(self.con, short, extra_rows=extra + ml_rows)
+        finally:
+            set_history_view("events")
         # keep only detections that include at least one event of this batch (older ones are already merged)
         self.con.execute("""DELETE FROM detections WHERE detection_id NOT IN (
             SELECT DISTINCT d.detection_id FROM detections d, unnest(d.member_event_ids) u(m)
@@ -392,7 +399,20 @@ class LiveEngine:
                   FROM batch_events WHERE {compile_filter(r.filter)} AND {" AND ".join(f'"{k}" IS NOT NULL' for k in keys)}
                   GROUP BY ALL) n
                 WHERE NOT EXISTS (SELECT 1 FROM kb_first_seen f WHERE f.rule_id = ? AND f.k = n.k)""", [r.id]).fetchall()
+            cap = r.first_seen.novelty_cap
+            if cap:  # D-94: rank new keys within their group against everything stored so far
+                idx = [keys.index(w) for w in cap.within]
+                seen: dict[tuple, int] = {}
+                for (k0,) in self.con.execute("SELECT k FROM kb_first_seen WHERE rule_id = ?", [r.id]).fetchall():
+                    g = tuple(json.loads(k0)[i] for i in idx)
+                    seen[g] = seen.get(g, 0) + 1
+                new = sorted(new, key=lambda x: (x[1], x[2]))
             for k, t, eid, vals in new:
+                if cap:
+                    g = tuple(vals[i] for i in idx)
+                    seen[g] = seen.get(g, 0) + 1
+                    if seen[g] > cap.max:
+                        continue
                 if t >= warm:
                     pair = ", ".join(f"{a}={b}" for a, b in zip(keys, vals))
                     rows.append(detection_row(r, {"members": [eid], "ts_first": t, "ts_last": t,

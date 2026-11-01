@@ -32,6 +32,15 @@ techniques:
   T1021:     {name: Remote Services, tactics: [Lateral Movement]}
   T1021.001: {name: Remote Desktop Protocol, parent: T1021, tactics: [Lateral Movement]}
   T1021.002: {name: SMB/Windows Admin Shares, parent: T1021, tactics: [Lateral Movement]}
+  T1021.004: {name: SSH, parent: T1021, tactics: [Lateral Movement]}
+  T1021.006: {name: Windows Remote Management, parent: T1021, tactics: [Lateral Movement]}
+  T1039:     {name: Data from Network Shared Drive, tactics: [Collection]}
+  T1571:     {name: Non-Standard Port, tactics: [Command and Control]}
+  T1566:     {name: Phishing, tactics: [Initial Access]}
+  T1566.002: {name: Spearphishing Link, parent: T1566, tactics: [Initial Access]}
+  T1562.004: {name: Disable or Modify System Firewall, parent: T1562, tactics: [Defense Evasion]}
+  T1133:     {name: External Remote Services, tactics: [Persistence, Initial Access]}
+  T1030:     {name: Data Transfer Size Limits, tactics: [Exfiltration]}
   T1071.001: {name: Web Protocols, parent: T1071, tactics: [Command and Control]}
   T1041:     {name: Exfiltration Over C2 Channel, tactics: [Exfiltration]}
   T1204.002: {name: Malicious File, parent: T1204, tactics: [Execution]}

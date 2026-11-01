@@ -1,0 +1,21 @@
+attack_id,tier,chain,order,step,variant,technique,tactic,events,events_flagged,found,in_incident,predicted,technique_exact,technique_parent,rules,unverified_logid,evasion
+A001,easy,main_prd,1,recon_covering,covering_sessions,T1594,Reconnaissance,27,0,False,False,,False,False,,False,True
+A001,easy,main_prd,2,credential_attack,vpn_spray_slow_rotating,T1110.003,Credential Access,5,0,False,False,,False,False,,True,True
+A001,easy,main_prd,3,initial_access,vpn_login,T1133,Initial Access,1,0,False,False,,False,False,,True,False
+A001,easy,main_prd,4,c2,beacon_heavy_jitter,T1071.001,Command and Control,7,0,False,False,,False,False,,False,True
+A001,easy,main_prd,5,discovery,targeted_scan,T1046,Discovery,5,2,True,False,T1021.002,False,False,"F019,F020",False,False
+A001,easy,main_prd,6,lateral_fileserver,smb_it_mimic,T1021.002,Lateral Movement,12,0,False,False,,False,False,,False,True
+A001,easy,main_prd,7,lateral_dc,smb_it_mimic,T1021.002,Lateral Movement,18,0,False,False,,False,False,,False,True
+A001,easy,main_prd,8,exfiltration,dns_exfil,T1048.003,Exfiltration,306,306,True,True,T1048.003,True,True,"F007,F030,ML-UEBA-src_ip",False,False
+A002,easy,dns_tunnel,1,compromise,phishing_link,T1566.002,Initial Access,4,0,False,False,,False,False,,False,False
+A002,easy,dns_tunnel,2,dns_c2,dns_tunnel_c2,T1071.004,Command and Control,18,3,True,True,T1048.003,False,False,"F007,F030,ML-UEBA-src_ip",False,False
+A002,easy,dns_tunnel,3,exfiltration,dns_exfil,T1048.003,Exfiltration,139,139,True,True,T1048.003,True,True,"F007,F030,ML-UEBA-src_ip",False,False
+A003,easy,main_prd,1,recon_covering,covering_sessions,T1594,Reconnaissance,9,0,False,False,,False,False,,False,True
+A003,easy,main_prd,2,credential_attack,admin_spray_slow_rotating,T1110.003,Credential Access,5,0,False,False,,False,False,,False,True
+A003,easy,main_prd,3,initial_access,admin_login,T1078,Initial Access,1,1,True,True,T1078,True,True,R002,True,False
+A003,easy,main_prd,4,persistence,modify_admin,T1098,Persistence,1,1,True,True,T1098,True,True,F025,True,False
+A003,easy,main_prd,5,compromise,drive_by,T1189,Initial Access,2,0,False,False,,False,False,,False,False
+A003,easy,main_prd,6,c2,beacon_heavy_jitter,T1071.001,Command and Control,25,0,False,False,,False,False,,False,True
+A003,easy,main_prd,7,lateral_fileserver,winrm_it_mimic,T1021.006,Lateral Movement,41,1,True,False,T1021.006,True,True,F021,False,True
+A003,easy,main_prd,8,lateral_dc,rdp_it_mimic,T1021.001,Lateral Movement,16,1,True,False,T1021.001,True,True,F018,False,True
+A003,easy,main_prd,9,exfiltration,exfil_under_p95,T1030,Exfiltration,321,0,False,False,,False,False,,False,True

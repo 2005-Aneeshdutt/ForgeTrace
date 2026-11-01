@@ -1,4 +1,4 @@
-"""One positive and one negative FortiGate fixture per firewall rule (F001-F017). Each negative sits just
+"""One positive and one negative FortiGate fixture per firewall rule (F001-F030). Each negative sits just
 on the other side of the rule's condition. Addresses are documentation ranges; rules hold no literals."""
 from __future__ import annotations
 
@@ -49,6 +49,37 @@ def cfg(t, msg, action="Edit"):
                action=action, srccountry="India", msg=msg)
 
 
+def admin_cfg(t, msg, ip):
+    """Admin change as FortiGate writes it: the session address only inside ui="https(<ip>)" (D-97)."""
+    return fgt(t, type="event", subtype="system", logdesc="Object attribute configured", user="admin",
+               ui=f"https({ip})", action="Edit", msg=msg)
+
+
+def wf(t, src, host):
+    return fgt(t, type="utm", subtype="webfilter", srcip=src, dstip="198.51.100.30", dstport=443, action="passthrough",
+               hostname=host, url="/")
+
+
+def first_hop(port):
+    """Positive: a subnet's first connection on `port` after the 12 h warm-up. Negative: the same hop as that
+    subnet's third new destination on the port (novelty cap 2, D-94)."""
+    start = conn(0, "10.10.30.9", "10.10.30.10", dport=80)
+    hop = conn(13 * 3600, "10.10.40.5", "10.10.10.25", dport=port)
+    earlier = [conn(3600, "10.10.40.6", "10.10.10.30", dport=port), conn(3700, "10.10.40.7", "10.10.10.31", dport=port)]
+    return [start, hop], [start] + earlier + [hop]
+
+
+def c2(port, upload):
+    beacons = [conn(i * 3600, "10.10.40.5", "198.51.100.20", dport=port, sent=500) for i in range(6)]
+    return beacons + [conn(7 * 3600, "10.10.10.25", "198.51.100.20", sent=upload)]
+
+
+def phish(upload):
+    return [wf(0, "10.10.40.5", "rare-site.example"), wf(5, "10.10.40.6", "common.example"),
+            wf(6, "10.10.40.7", "common.example"), conn(60, "10.10.40.5", "198.51.100.20", sent=500),
+            conn(120, "10.10.10.25", "198.51.100.20", sent=upload)]
+
+
 LONG = "a" * 40
 CASES = {
     "F001": ([conn(i // 3, "198.51.100.1", "10.10.20.5", dport=1000 + i) for i in range(120)],
@@ -69,8 +100,8 @@ CASES = {
              [dns(i * 10, "10.10.10.88", f"www{i}.tun.example") for i in range(55)]),
     "F008": ([conn(i * 300, "10.10.10.112", "198.51.100.7", sent=600) for i in range(31)],
              [conn(i * 300, "10.10.10.112", f"198.51.100.{i + 1}", sent=600) for i in range(31)]),
-    "F009": ([conn(i * 3600, "10.10.20.31", "198.51.100.8", sent=1_000_000) for i in range(40)],
-             [conn(i * 3600, "10.10.20.31", "198.51.100.8", sent=1_000_000) for i in range(20)]),
+    "F009": ([conn(i * 600, "10.10.20.31", "198.51.100.8", sent=1_000_000) for i in range(40)],
+             [conn(i * 600, "10.10.20.31", "198.51.100.8", sent=1_000_000) for i in range(20)]),
     "F010": ([cfg(0, "Attribute 'status' of setting 'log disk setting' changed from 'enable' to 'disable'")],
              [cfg(0, "Attribute 'status' of setting 'log disk setting' changed from 'disable' to 'enable'")]),
     "F011": ([cfg(0, "Add system.admin svc_test", action="Add")],
@@ -88,6 +119,21 @@ CASES = {
              [conn(i // 10, f"{11 + i % 200}.{i // 200}.1.1", "10.10.20.20", dport=80) for i in range(301)]),
     "F017": ([conn(i * 5, f"198.51.{i}.53", "203.0.113.5", dport=40000 + i, sent=3000, sport=53) for i in range(51)],
              [conn(i * 5, f"198.51.{i}.53", "203.0.113.5", dport=40000 + i, sent=100, sport=53) for i in range(51)]),
+    "F018": first_hop(3389), "F019": first_hop(445), "F020": first_hop(22), "F021": first_hop(5985),
+    "F022": (c2(443, 25_000_000), c2(443, 10_000_000)),
+    "F023": ([conn(i * 600, "10.10.20.31", "198.51.100.8", dport=22, sent=1_000_000) for i in range(40)],
+             [conn(i * 600, "10.10.20.31", "198.51.100.8", dport=443, sent=1_000_000) for i in range(40)]),
+    "F024": (c2(4444, 25_000_000), c2(4444, 10_000_000)),
+    "F025": ([admin_cfg(0, "Edit system.admin secops", "198.51.100.9")],
+             [admin_cfg(0, "Edit system.admin secops", "10.10.99.21")]),
+    "F026": ([admin_cfg(0, "Edit firewall.policy 19", "198.51.100.9")],
+             [admin_cfg(0, "Edit firewall.policy 19", "10.10.99.21")]),
+    "F027": ([conn(i * 20, f"203.0.113.{i + 1}", "10.10.20.20") for i in range(3)],
+             [conn(i * 20, f"203.0.{i + 1}.7", "10.10.20.20") for i in range(3)]),
+    "F028": (phish(25_000_000), phish(10_000_000)),
+    "F029": ([login(i * 600, "203.0.113.9") for i in range(4)], [login(i * 600, "203.0.113.9") for i in range(3)]),
+    "F030": ([dns(i * 10, "10.10.10.88", f"{LONG}{i}.tun.example") for i in range(100)],
+             [dns(i * 10, "10.10.10.88", f"{LONG}{i}.tun.example") for i in range(99)]),
 }
 
 

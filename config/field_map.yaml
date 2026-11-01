@@ -106,6 +106,8 @@ formats:
       service: [service]
       src_country: [srccountry]
       dst_country: [dstcountry]
+    extract:             # admin events name the session's address only inside ui="https(<ip>)" (D-97)
+      src_ip: [{from: ui, regex: '\(([0-9a-fA-F:.]+)\)'}]
 
 # Canonical event_type (dossier §13). First matching rule wins; conditions are ANDed.
 event_types:

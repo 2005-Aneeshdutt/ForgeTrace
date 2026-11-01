@@ -349,7 +349,21 @@ def normalise(raw: dict, fmt: str) -> dict:
         for target in spec.get("label_fields", {}).values():
             if ev.get(target) is None:
                 ev[target] = raw.get(f"label:{target}")
+    for field, rx_from in _extracts(fmt):  # D-97: a value embedded in another key, e.g. ui="https(1.2.3.4)"
+        if ev.get(field) is None:
+            for rx, key in rx_from:
+                m = rx.search(str(raw.get(key) or ""))
+                if m:
+                    ev[field] = m.group(1)
+                    break
     return _finish(ev, fm)
+
+
+@lru_cache(maxsize=None)
+def _extracts(fmt: str) -> tuple:
+    """Profile `extract`: {envelope field: [{from: raw key, regex: one capture group}]}, used when the field is empty."""
+    spec = config.field_map()["formats"][fmt].get("extract") or {}
+    return tuple((f, tuple((re.compile(x["regex"]), x["from"]) for x in xs)) for f, xs in spec.items())
 
 
 def _norm_key(k: str) -> str:

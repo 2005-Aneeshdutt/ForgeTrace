@@ -36,7 +36,17 @@ _DET_ARROW = pa.schema([
     ("aggregate_by", pa.list_(pa.string())), ("duplicate_of", pa.string()), ("detector", pa.string()),
     ("score", pa.float64()), ("reasons", pa.string()),
 ])
-OPS = {"eq", "ne", "in", "contains", "startswith", "endswith", "regex", "gte", "lte", "gt", "lt",
+# Dataset-wide operators (rare, in_set) read this relation. Batch: the whole input (`events`). Live: all hot
+# history up to the batch (D-101), never just the batch horizon, so an address learned days ago still counts.
+HISTORY_VIEW = "events"
+
+
+def set_history_view(name: str) -> None:
+    global HISTORY_VIEW
+    HISTORY_VIEW = name
+
+
+OPS = {"in_set", "eq", "ne", "in", "contains", "startswith", "endswith", "regex", "gte", "lte", "gt", "lt",
        "is_null", "not_null", "rare"}
 
 
@@ -96,9 +106,23 @@ class FollowedBy(BaseModel):
     link: dict[str, str] = {}   # follower field -> window-event field that must be equal (case-insensitive)
 
 
+class NoveltyCap(BaseModel):
+    """Only the first `max` new keys within each `within` group fire (D-94): the first few new destinations a
+    subnet reaches on a port are suspicious; once it routinely fans out (IT admins, scanners) it is established."""
+    within: list[str]
+    max: int
+
+
 class FirstSeen(BaseModel):
     keys: list[str]
     warmup: str
+    novelty_cap: NoveltyCap | None = None
+
+    @model_validator(mode="after")
+    def _cap_fields(self):
+        if self.novelty_cap and not set(self.novelty_cap.within) <= set(self.keys):
+            raise ValueError("novelty_cap.within must be a subset of first_seen.keys")
+        return self
 
 
 class Rule(BaseModel):
@@ -148,8 +172,11 @@ def _walk_fields(node: Any, out: set) -> None:
     if isinstance(node, dict):
         if "field" in node:
             out.add(node["field"])
-            if node.get("op") == "rare":
+            if node.get("op") == "rare" and node["by"] != "@day":
                 out.add(node["by"])
+            if node.get("op") in ("rare", "in_set"):
+                if node.get("among"):
+                    _walk_fields(node["among"], out)
         for k in ("all", "any"):
             for c in node.get(k, []):
                 _walk_fields(c, out)
@@ -231,12 +258,19 @@ def compile_filter(node: dict) -> str:
         return f"({col} IS NULL)"
     if op == "not_null":
         return f"({col} IS NOT NULL)"
+    if op == "in_set":  # D-98: the value also occurs in events matching `among` (e.g. an address that takes uploads)
+        return f"({col} IN (SELECT {col} FROM {HISTORY_VIEW} WHERE {col} IS NOT NULL AND {compile_filter(node['among'])}))"
     if op == "rare":  # value seen with at most max_distinct values of `by` across the whole dataset
         by = node["by"]
-        if by not in ALLOWED_FIELDS:
+        if by == "@day":  # distinct calendar days (D-96): recurring daily activity (backups) is routine
+            by_sql = "CAST(ts AS DATE)"
+        elif by in ALLOWED_FIELDS:
+            by_sql = f'"{by}"'
+        else:
             raise ValueError(f"bad rare.by {by}")
-        return (f"({col} IN (SELECT {col} FROM events WHERE {col} IS NOT NULL GROUP BY {col} "
-                f"HAVING count(DISTINCT \"{by}\") <= {int(node['max_distinct'])}))")
+        among = f" AND {compile_filter(node['among'])}" if node.get("among") else ""  # count only these events
+        return (f"({col} IN (SELECT {col} FROM {HISTORY_VIEW} WHERE {col} IS NOT NULL{among} GROUP BY {col} "
+                f"HAVING count(DISTINCT {by_sql}) <= {int(node['max_distinct'])}))")
     raise ValueError(op)
 
 
@@ -266,10 +300,16 @@ def compile_rule(rule: Rule) -> dict[str, str]:
     if rule.type == "baseline":
         keys = ", ".join(f'"{k}"' for k in rule.first_seen.keys)
         warm = parse_duration(rule.first_seen.warmup)
-        sql["baseline"] = (
-            f"SELECT event_id, ts, {keys} FROM (SELECT event_id, ts, {keys}, row_number() OVER "
-            f"(PARTITION BY {keys} ORDER BY ts, event_id) AS rn FROM events WHERE {where}) "
-            f"WHERE rn = 1 AND ts >= (SELECT min(ts) FROM events) + INTERVAL {warm} SECOND ORDER BY ts, event_id")
+        nn = " AND ".join(f'"{k}" IS NOT NULL' for k in rule.first_seen.keys)
+        firsts = (f"SELECT event_id, ts, {keys} FROM (SELECT event_id, ts, {keys}, row_number() OVER "
+                  f"(PARTITION BY {keys} ORDER BY ts, event_id) AS rn FROM events WHERE ({where}) AND {nn}) WHERE rn = 1")
+        cap = rule.first_seen.novelty_cap
+        if cap:  # rank of each new key within its group, over the whole history (warm-up included)
+            within = ", ".join(f'"{k}"' for k in cap.within)
+            firsts = (f"SELECT event_id, ts, {keys} FROM (SELECT *, row_number() OVER (PARTITION BY {within} "
+                      f"ORDER BY ts, event_id) AS nk FROM ({firsts})) WHERE nk <= {int(cap.max)}")
+        sql["baseline"] = (f"SELECT * FROM ({firsts}) WHERE ts >= (SELECT min(ts) FROM events) + INTERVAL {warm} SECOND "
+                           f"ORDER BY ts, event_id")
     return sql
 
 
@@ -289,8 +329,10 @@ def _run_rule(con: duckdb.DuckDBPyConnection, rule: Rule) -> list[dict]:
         keys = rule.first_seen.keys
         for eid, ts, *kv in con.execute(sql["baseline"]).fetchall():
             pair = ", ".join(f"{k}={v}" for k, v in zip(keys, kv))
+            cap = rule.first_seen.novelty_cap
+            capt = (f"; one of the first {cap.max} new keys for this {', '.join(cap.within)}" if cap else "")
             dets.append({"members": [eid], "ts_first": ts, "ts_last": ts,
-                         "evidence": f"first-seen ({pair}) after {rule.first_seen.warmup} warm-up"})
+                         "evidence": f"first-seen ({pair}) after {rule.first_seen.warmup} warm-up{capt}"})
     else:
         rows = con.execute(sql["threshold"]).fetchall()
         n, W = rule.threshold.value, rule.threshold.seconds

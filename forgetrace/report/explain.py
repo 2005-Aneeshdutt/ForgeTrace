@@ -43,8 +43,12 @@ def condition_text(node: dict) -> str:
     if "not" in node:
         return f"NOT ({condition_text(node['not'])})"
     f, op, v = node["field"], node["op"], node.get("value")
+    if op == "in_set":
+        return f"{f} also occurs in events where {condition_text(node['among'])}"
     if op == "rare":
-        return f"{f} is seen with at most {node['max_distinct']} distinct {node['by']} in the data"
+        by = "days" if node["by"] == "@day" else node["by"]
+        among = f" among events where {condition_text(node['among'])}" if node.get("among") else ""
+        return f"{f} is seen on at most {node['max_distinct']} distinct {by}{among} in the data"
     if op in ("is_null", "not_null"):
         return f"{f} {OP_TEXT[op]}"
     val = ", ".join(map(str, v)) if isinstance(v, list) else str(v)
@@ -99,8 +103,11 @@ def rule_text(rule_id: str) -> dict:
         out["followed_by"] = (f"then, within {r.followed_by.within} and for the same {', '.join(r.followed_by.join_on)}: "
                               f"an event where {condition_text(r.followed_by.filter)}")
     if r.first_seen:
+        cap = r.first_seen.novelty_cap
         out["first_seen"] = (f"the first time this {', '.join(r.first_seen.keys)} combination appears, "
-                             f"after a {r.first_seen.warmup} learning period")
+                             f"after a {r.first_seen.warmup} learning period"
+                             + (f", and only among the first {cap.max} new combinations for the same "
+                                f"{', '.join(cap.within)} (later ones are routine for that group)" if cap else ""))
     return out
 
 

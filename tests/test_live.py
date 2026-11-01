@@ -1,7 +1,9 @@
 """Live engine (D-82..D-85): micro-batches build the same rule alerts and correlation edges as one batch run,
 re-running with no new data changes nothing, appended data is processed incrementally, and with Neo4j
 the graph holds the same incidents. ML detectors are compared on their own terms: live models learn from
-history only (D-93), so their flags legitimately differ from a batch run that trains on the whole span."""
+history only (D-93), so their flags legitimately differ from a batch run that trains on the whole span.
+Rules with dataset-wide operators (rare, in_set) see history to date in live mode and the whole input in batch
+(D-101): live may raise an early alert that batch suppresses with hindsight, so for them live must contain batch."""
 from __future__ import annotations
 
 import json
@@ -9,25 +11,46 @@ import json
 import duckdb
 
 from forgetrace.live.engine import LiveEngine
+from forgetrace.rules.engine import load_rules
 
 
-RULES_ONLY = "rule_id NOT LIKE 'ML-%'"
+def _hindsight(node) -> bool:
+    if isinstance(node, dict):
+        return node.get("op") in ("rare", "in_set") or any(_hindsight(v) for v in node.values())
+    return isinstance(node, list) and any(_hindsight(v) for v in node)
+
+
+HINDSIGHT = sorted(r.id for r in load_rules() if _hindsight(r.filter))
+_EXCLUDED = ", ".join(f"'{r}'" for r in HINDSIGHT) or "''"
+
+
+def _rules_only(alias: str = "") -> str:
+    p = f"{alias}." if alias else ""
+    return f"{p}rule_id NOT LIKE 'ML-%' AND {p}rule_id NOT IN ({_EXCLUDED})"
+
+
+def _hindsight_alerts(db, table: str) -> set:
+    con = duckdb.connect(str(db), read_only=True)
+    rows = set(con.execute(f"SELECT rule_id, aggregate_key FROM {table} WHERE rule_id IN (SELECT unnest(?))",
+                           [HINDSIGHT]).fetchall())
+    con.close()
+    return rows
 
 
 def _kb(out):
     con = duckdb.connect(str(out / "forgetrace.duckdb"), read_only=True)
-    alerts = sorted(con.execute(f"SELECT rule_id, aggregate_key FROM kb_alerts WHERE {RULES_ONLY}").fetchall())
-    edges = con.execute(f"""SELECT count(*) FROM kb_edges e JOIN kb_alerts a ON a.uid = e.src_uid AND a.{RULES_ONLY}
-                            JOIN kb_alerts b ON b.uid = e.dst_uid AND b.{RULES_ONLY}""").fetchone()[0]
+    alerts = sorted(con.execute(f"SELECT rule_id, aggregate_key FROM kb_alerts WHERE {_rules_only()}").fetchall())
+    edges = con.execute(f"""SELECT count(*) FROM kb_edges e JOIN kb_alerts a ON a.uid = e.src_uid AND {_rules_only('a')}
+                            JOIN kb_alerts b ON b.uid = e.dst_uid AND {_rules_only('b')}""").fetchone()[0]
     con.close()
     return alerts, edges
 
 
 def _batch(sample):
     con = duckdb.connect(str(sample["out"] / "forgetrace.duckdb"), read_only=True)
-    groups = sorted(con.execute(f"SELECT rule_id, aggregate_key FROM alert_groups WHERE {RULES_ONLY}").fetchall())
-    edges = con.execute(f"""SELECT count(*) FROM edges e JOIN alert_groups a ON a.group_id = e.src_group_id AND a.{RULES_ONLY}
-                            JOIN alert_groups b ON b.group_id = e.dst_group_id AND b.{RULES_ONLY}""").fetchone()[0]
+    groups = sorted(con.execute(f"SELECT rule_id, aggregate_key FROM alert_groups WHERE {_rules_only()}").fetchall())
+    edges = con.execute(f"""SELECT count(*) FROM edges e JOIN alert_groups a ON a.group_id = e.src_group_id AND {_rules_only('a')}
+                            JOIN alert_groups b ON b.group_id = e.dst_group_id AND {_rules_only('b')}""").fetchone()[0]
     con.close()
     return groups, edges
 
@@ -39,6 +62,8 @@ def test_live_batches_equal_batch_run(sample, tmp_path):
     st = eng.run(follow=False)
     assert st["batches"] >= 4 and st["totals"]["events"] == sample["stats"]["ingest"]["events"]
     assert _kb(tmp_path / "live") == _batch(sample)
+    assert _hindsight_alerts(sample["out"] / "forgetrace.duckdb", "alert_groups") <= \
+        _hindsight_alerts(tmp_path / "live" / "forgetrace.duckdb", "kb_alerts")
     plan = json.loads((tmp_path / "live" / "run_plan.json").read_text())
     assert plan["enabled"] and "capability_profile" in plan
 

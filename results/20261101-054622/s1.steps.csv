@@ -1,0 +1,32 @@
+attack_id,tier,chain,order,step,variant,technique,tactic,events,events_flagged,found,in_incident,predicted,technique_exact,technique_parent,rules,unverified_logid,evasion
+A001,hard,main_prd,1,credential_attack,vpn_spray,T1110.003,Credential Access,52,0,False,False,,False,False,,True,False
+A001,hard,main_prd,2,initial_access,vpn_login,T1133,Initial Access,1,0,False,False,,False,False,,True,False
+A001,hard,main_prd,3,c2,beacon_nonstd_port,T1571,Command and Control,29,0,False,False,,False,False,,False,False
+A001,hard,main_prd,4,discovery,targeted_scan,T1046,Discovery,3,0,False,False,,False,False,,False,False
+A001,hard,main_prd,5,lateral_fileserver,smb,T1021.002,Lateral Movement,3,1,True,False,T1021.002,True,True,F019,False,False
+A001,hard,main_prd,6,lateral_dc,ssh,T1021.004,Lateral Movement,4,1,True,False,T1021.004,True,True,F020,False,False
+A001,hard,main_prd,7,exfiltration,alt_protocol,T1048,Exfiltration,1,1,True,False,T1048,True,True,"F023,R011",False,False
+A002,medium,main_prd,1,credential_attack,admin_bruteforce_single,T1110.001,Credential Access,251,251,True,False,T1110,False,True,"F029,ML-UEBA-user,R001",False,False
+A002,medium,main_prd,2,initial_access,admin_login,T1078,Initial Access,1,1,True,False,T1078,True,True,R002,True,False
+A002,medium,main_prd,3,persistence,new_admin,T1136.001,Persistence,2,2,True,False,T1136.001,True,True,"F011,F025",True,False
+A002,medium,main_prd,4,compromise,phishing_link,T1566.002,Initial Access,5,1,True,False,T1566.002,True,True,F028,False,False
+A002,medium,main_prd,5,c2,beacon_nonstd_port,T1571,Command and Control,95,94,True,False,T1071.001,False,False,F008,False,False
+A002,medium,main_prd,6,discovery,sweep_scan,T1046,Discovery,242,81,True,False,T1021.002,False,False,"F006,F019",False,False
+A002,medium,main_prd,7,lateral_fileserver,ssh,T1021.004,Lateral Movement,9,1,True,False,T1021.004,True,True,F020,False,False
+A002,medium,main_prd,8,lateral_dc,rdp,T1021.001,Lateral Movement,4,1,True,False,T1021.001,True,True,F018,False,False
+A002,medium,main_prd,9,exfiltration,cloud_storage,T1567.002,Exfiltration,1,1,True,False,T1041,False,False,"F009,R011",False,False
+A003,easy,beacon_only,1,compromise,drive_by,T1189,Initial Access,2,0,False,False,,False,False,,False,False
+A003,easy,beacon_only,2,c2,beacon_nonstd_port,T1571,Command and Control,179,179,True,True,T1071.001,False,False,"F008,F024",False,False
+A003,easy,beacon_only,3,exfiltration,over_c2,T1041,Exfiltration,6,6,True,True,T1041,True,True,"F009,R011",False,False
+A004,hard,dmz_staging,1,exploit_public,web_exploit,T1190,Initial Access,7,7,True,False,T1190,True,True,F027,False,False
+A004,hard,dmz_staging,2,c2,beacon_https,T1071.001,Command and Control,36,35,True,True,T1071.001,True,True,F022,False,False
+A004,hard,dmz_staging,3,collection,pull_from_fileserver,T1039,Collection,4,0,False,False,,False,False,,False,False
+A004,hard,dmz_staging,4,exfiltration,over_c2,T1041,Exfiltration,1,1,True,True,T1041,True,True,"F009,R011",False,False
+A005,easy,dmz_staging,1,exploit_public,web_exploit,T1190,Initial Access,30,30,True,True,T1190,True,True,F027,False,False
+A005,easy,dmz_staging,2,c2,beacon_nonstd_port,T1571,Command and Control,160,159,True,True,T1071.001,False,False,"F008,F024,ML-UEBA-src_ip",False,False
+A005,easy,dmz_staging,3,collection,pull_from_fileserver,T1039,Collection,8,0,False,False,,False,False,,False,False
+A005,easy,dmz_staging,4,exfiltration,over_c2,T1041,Exfiltration,7,7,True,True,T1041,True,True,"F009,ML-UEBA-src_ip,R011",False,False
+A006,hard,dmz_staging,1,exploit_public,web_exploit,T1190,Initial Access,20,20,True,False,T1190,True,True,F027,False,False
+A006,hard,dmz_staging,2,c2,beacon_https,T1071.001,Command and Control,34,0,False,False,,False,False,,False,False
+A006,hard,dmz_staging,3,collection,pull_from_fileserver,T1039,Collection,10,0,False,False,,False,False,,False,False
+A006,hard,dmz_staging,4,exfiltration,alt_protocol,T1048,Exfiltration,1,1,True,False,T1048,True,True,"F023,R011",False,False
