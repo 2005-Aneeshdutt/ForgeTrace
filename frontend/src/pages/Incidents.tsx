@@ -36,13 +36,13 @@ function Queue() {
   return (
     <Page title="Incident Management" sub="Sorted by risk, so the worst incident is on top. Alerts merged shows how much noise each incident absorbed.">
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-        <Kpi label="Total incidents" value={fmtN(data.length)} /><Kpi label="Critical" value={fmtN(data.filter((i) => i.severity === "critical").length)} tone={data.some((i) => i.severity === "critical") ? "crit" : undefined} /><Kpi label="High severity" value={fmtN(data.filter((i) => i.severity === "high").length)} tone="warn" />
+        <Kpi label="Total incidents" value={fmtN(data.length)} /><Kpi label="High severity" value={fmtN(data.filter((i) => i.severity === "high").length)} tone={data.some((i) => i.severity === "high") ? "crit" : undefined} /><Kpi label="Medium severity" value={fmtN(data.filter((i) => i.severity === "medium").length)} tone="warn" />
         <Kpi label="Investigating" value="N/A" sub="no case workflow in backend" /><Kpi label="Resolved" value="N/A" sub="no case workflow in backend" /><Kpi label="Alerts merged" value={fmtN(data.reduce((a, i) => a + i.raw_alert_count_total, 0))} tone="cyan" sub={un.data ? `${un.data.length} groups left unlinked` : undefined} />
       </div>
       <Panel className="flex-1 min-h-[420px]" title={`Queue · ${rows.length}`}>
         <div className="flex flex-col h-full">
           <div className="flex items-center gap-2 flex-wrap px-3 py-2 border-b border-line2">
-            <Select label="All severities" value={sev} onChange={setSev} options={["critical", "high", "medium", "low"]} /><Select label="All statuses" value={status} onChange={setStatus} options={opts.st} /><Select label="All days" value={day} onChange={setDay} options={opts.days} />
+            <Select label="All severities" value={sev} onChange={setSev} options={["high", "medium", "low"]} /><Select label="All statuses" value={status} onChange={setStatus} options={opts.st} /><Select label="All days" value={day} onChange={setDay} options={opts.days} />
             <Select label="All tactics" value={tac} onChange={setTac} options={opts.tac} /><Select label="All hosts" value={host} onChange={setHost} options={opts.hosts} /><Select label="All users" value={user} onChange={setUser} options={opts.users} />
           </div>
           <div className="flex-1 min-h-0"><DataTable data={rows} columns={columns} onRow={(i) => go("incidents", i.incident_id)} empty="No incident matches these filters" /></div>

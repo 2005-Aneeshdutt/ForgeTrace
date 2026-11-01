@@ -85,7 +85,9 @@ export function CommandCentre() {
   const run = o.run; const list = inc.data ?? [];
   const ingestS = run.stages?.ingest_s; const events = o.funnel.events ?? 0;
   const eps = ingestS ? events / ingestS : null;
-  const critCount = list.filter((i) => i.severity === "critical").length;
+  // Incident severity bands come from the risk score: high / medium / low (config/correlation.yml severity_bands).
+  const bySev = (s: string) => list.filter((i) => i.severity === s).length;
+  const highCount = bySev("high");
   const sorted = [...o.events_by_type].sort((a, b) => b.count - a.count);
   const sources = sorted.length > 7 ? [...sorted.slice(0, 6), { key: `+${sorted.length - 6} more types`, count: sorted.slice(6).reduce((a, b) => a + b.count, 0) }] : sorted;
   const running = job?.state === "running";
@@ -110,7 +112,7 @@ export function CommandCentre() {
         <Kpi label="Events / second" value={eps ? fmtN(Math.round(eps)) : "N/A"} sub="average of last ingest" tone="cyan" />
         <Kpi label="Total detections" value={fmtN(o.funnel.detections)} sub={`${fmtN(o.funnel.alert_groups)} groups`} onClick={() => go("detections")} tone="warn" />
         <Kpi label="Active incidents" value={fmtN(list.filter((i) => i.status === "emitted").length)} sub="status: emitted" onClick={() => go("incidents")} />
-        <Kpi label="Critical incidents" value={fmtN(critCount)} sub={`${list.filter((i) => i.severity === "high").length} high severity`} tone={critCount ? "crit" : undefined} onClick={() => go("incidents")} />
+        <Kpi label="High-severity incidents" value={fmtN(highCount)} sub={`${bySev("medium")} medium · ${bySev("low")} low`} tone={highCount ? "crit" : undefined} onClick={() => go("incidents")} />
         <Kpi label="Graph entities" value={all.loading ? "…" : fmtN(x.entities)} sub="distinct, across incidents" onClick={() => go("graph")} />
         <Kpi label="Critical assets reachable" value={all.loading ? "…" : fmtN(x.crit)} sub="potential, not proof" tone={x.crit ? "warn" : undefined} onClick={() => go("reach")} />
       </div>
